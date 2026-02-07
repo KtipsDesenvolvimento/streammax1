@@ -24,7 +24,7 @@ export function parseM3U(content: string): M3UItem[] {
       const logoMatch = infoLine.match(/tvg-logo="([^"]*)"/);
       const groupMatch = infoLine.match(/group-title="([^"]*)"/);
 
-      const title = titleMatch?.[1]?.trim() || "Sem título";
+      const title = titleMatch?.[1]?.trim() || "Sem tÃ­tulo";
       const image = logoMatch?.[1] || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=300&h=450&fit=crop";
       const category = groupMatch?.[1] || "Geral";
 
@@ -34,7 +34,7 @@ export function parseM3U(content: string): M3UItem[] {
         image,
         category,
         url: urlLine.startsWith("http") ? urlLine : "",
-        duration: "—",
+        duration: "â€”",
         year: new Date().getFullYear().toString(),
         rating: String(Math.floor(Math.random() * 15) + 85),
       });

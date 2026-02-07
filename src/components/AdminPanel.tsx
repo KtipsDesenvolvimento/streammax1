@@ -1,181 +1,460 @@
-import { useState, useRef } from "react";
-import { motion } from "framer-motion";
-import { Upload, Check, AlertCircle, Eye, Send, FileText, X } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Upload,
+  X,
+  UserPlus,
+  Film,
+  Tv,
+  Shield,
+  Send,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+  List,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useContent } from "@/contexts/ContentContext";
-import { parseM3U, M3UItem } from "@/lib/m3u-parser";
+import { useContent, M3UItem } from "@/contexts/ContentContext";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { Progress } from "@/components/ui/progress";
 
-const AdminPanel = ({ onClose }: { onClose: () => void }) => {
-  const { previewContent, setPreviewContent, publishContent, hasUnpublished } = useContent();
+type UploadType = "movie" | "series";
+
+interface AdminPanelProps {
+  onClose: () => void;
+}
+
+interface UploadProgress {
+  status: "idle" | "processing" | "done" | "error";
+  message: string;
+  progress: number;
+  total: number;
+  itemsLoaded: number;
+}
+
+// 🔥 LIMITE DE SEGURANÇA — evita travar a UI mesmo com 1MI+
+const MAX_PREVIEW_ITEMS = 50_000;
+
+const AdminPanel = ({ onClose }: AdminPanelProps) => {
+  const { isAdmin, user } = useAuth();
+
+  const {
+    previewContent,
+    setPreviewContent,
+    publishContent,
+    hasUnpublished,
+    publishedContent,
+  } = useContent();
+
   const { toast } = useToast();
+
+  const workerRef = useRef<Worker | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [parsing, setParsing] = useState(false);
-  const [parsedItems, setParsedItems] = useState<M3UItem[]>([]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const [uploadType, setUploadType] = useState<UploadType>("movie");
+  const isLargeScale = uploadType === "series";
 
-    setParsing(true);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
+    status: "idle",
+    message: "",
+    progress: 0,
+    total: 0,
+    itemsLoaded: 0,
+  });
 
-    try {
-      let m3uContent: string;
+  // 🔐 Segurança
+  useEffect(() => {
+    if (!isAdmin) {
+      toast({
+        title: "Acesso Negado",
+        description: "Você não tem permissão para acessar esta área",
+        variant: "destructive",
+      });
+      onClose();
+    }
+  }, [isAdmin, onClose, toast]);
 
-      if (file.name.endsWith(".m3u") || file.name.endsWith(".m3u8")) {
-        m3uContent = await file.text();
-      } else if (file.name.endsWith(".zip")) {
-        // For ZIP, we'd need JSZip - for now show message
-        toast({
-          title: "ZIP detectado",
-          description: "Suporte a ZIP em breve. Por favor envie o .m3u diretamente.",
-          variant: "destructive",
+  // 🚀 Worker preparado para escala massiva
+  useEffect(() => {
+    workerRef.current = new Worker("/m3u-parser.worker.js");
+
+    workerRef.current.onmessage = (e) => {
+      const { status, items, message, progress, total, totalItems } = e.data;
+
+      if (status === "progress") {
+        setUploadProgress({
+          status: "processing",
+          message: message || "Processando...",
+          progress: progress || 0,
+          total: total || 0,
+          itemsLoaded: 0,
         });
-        setParsing(false);
-        return;
-      } else {
-        toast({ title: "Formato inválido", description: "Envie um arquivo .m3u ou .m3u8", variant: "destructive" });
-        setParsing(false);
-        return;
       }
 
-      const items = parseM3U(m3uContent);
-      if (items.length === 0) {
-        toast({ title: "Arquivo vazio", description: "Nenhum conteúdo encontrado no arquivo .m3u", variant: "destructive" });
-      } else {
-        setParsedItems(items);
-        setPreviewContent(items);
+      if (status === "batch") {
+        setPreviewContent((current: M3UItem[]) => {
+          const newItems = items.filter(
+            (item: M3UItem) => !current.some((i) => i.id === item.id)
+          );
+
+          const merged = [...current, ...newItems];
+
+          // 🔥 PROTEÇÃO DE MEMÓRIA
+          if (merged.length > MAX_PREVIEW_ITEMS) {
+            return merged.slice(merged.length - MAX_PREVIEW_ITEMS);
+          }
+
+          return merged;
+        });
+
+        setUploadProgress((prev) => ({
+          ...prev,
+          status: "processing",
+          message: `Carregando itens... ${(
+            prev.itemsLoaded + items.length
+          ).toLocaleString()}`,
+          progress: progress || prev.progress,
+          total: total || prev.total,
+          itemsLoaded: prev.itemsLoaded + items.length,
+        }));
+      }
+
+      if (status === "done") {
+        setUploadProgress({
+          status: "done",
+          message:
+            message ||
+            `✅ ${(totalItems || 0).toLocaleString()} itens carregados!`,
+          progress: total || 100,
+          total: total || 100,
+          itemsLoaded: totalItems || 0,
+        });
+
         toast({
           title: "Upload concluído!",
-          description: `${items.length} itens carregados para preview.`,
+          description: message,
+        });
+
+        setTimeout(() => {
+          setUploadProgress({
+            status: "idle",
+            message: "",
+            progress: 0,
+            total: 0,
+            itemsLoaded: 0,
+          });
+        }, 3000);
+      }
+
+      if (status === "error") {
+        setUploadProgress({
+          status: "error",
+          message: message || "Erro ao processar arquivo",
+          progress: 0,
+          total: 0,
+          itemsLoaded: 0,
+        });
+
+        toast({
+          title: "Erro no upload",
+          description: message,
+          variant: "destructive",
         });
       }
-    } catch {
-      toast({ title: "Erro ao processar", description: "Não foi possível ler o arquivo.", variant: "destructive" });
-    }
+    };
 
-    setParsing(false);
+    return () => workerRef.current?.terminate();
+  }, [setPreviewContent, toast]);
+
+  // 📤 Upload (escala automática)
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !workerRef.current) return;
+
+    setUploadProgress({
+      status: "processing",
+      message: isLargeScale
+        ? "Série detectada — processando em grande escala..."
+        : "Iniciando upload...",
+      progress: 0,
+      total: 0,
+      itemsLoaded: 0,
+    });
+
+    workerRef.current.postMessage({
+      file,
+      type: uploadType,
+      largeScale: isLargeScale,
+    });
+
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleClearPreview = () => {
+    if (confirm("Tem certeza que deseja limpar todos os itens não publicados?")) {
+      setPreviewContent([]);
+      toast({
+        title: "Preview limpo",
+        description: "Todos os itens não publicados foram removidos",
+      });
+    }
   };
 
   const handlePublish = () => {
     publishContent();
     toast({
       title: "Publicado!",
-      description: `${previewContent.length} itens publicados para todos os usuários.`,
+      description: "Conteúdo publicado com sucesso",
     });
   };
 
-  // Group items by category
-  const categories = parsedItems.reduce<Record<string, M3UItem[]>>((acc, item) => {
-    if (!acc[item.category]) acc[item.category] = [];
-    acc[item.category].push(item);
-    return acc;
-  }, {});
+  // 📊 Estatísticas
+  const totalPreview = previewContent.length;
+  const totalPublished = publishedContent.length;
+  const totalUnpublished = previewContent.filter(
+    (item) => !publishedContent.some((p) => p.id === item.id)
+  ).length;
+
+  const moviesInPreview = previewContent.filter(
+    (i) => i.source === "movie"
+  ).length;
+  const seriesInPreview = previewContent.filter(
+    (i) => i.source === "series"
+  ).length;
+
+  const progressPercentage =
+    uploadProgress.total > 0
+      ? Math.floor(
+          (uploadProgress.progress / uploadProgress.total) * 100
+        )
+      : 0;
+
+  if (!isAdmin) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-sm overflow-y-auto"
-    >
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-2xl font-bold text-foreground">Painel Administrativo</h2>
-          <button onClick={onClose} className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80">
-            <X className="w-5 h-5 text-foreground" />
-          </button>
-        </div>
-
-        {/* Upload Section */}
-        <div className="glass-card rounded-xl p-6 mb-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <Upload className="w-5 h-5 text-primary" />
-            Upload de Conteúdo
-          </h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Envie um arquivo .m3u ou .m3u8 para importar conteúdo. O conteúdo será carregado em modo preview apenas para você.
-          </p>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".m3u,.m3u8,.zip"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={parsing}
-            className="btn-primary-gradient gap-2"
-          >
-            <FileText className="w-4 h-4" />
-            {parsing ? "Processando..." : "Selecionar Arquivo .m3u"}
-          </Button>
-        </div>
-
-        {/* Preview Section */}
-        {parsedItems.length > 0 && (
-          <div className="glass-card rounded-xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                <Eye className="w-5 h-5 text-primary" />
-                Preview ({parsedItems.length} itens)
-              </h3>
-              {hasUnpublished && (
-                <span className="flex items-center gap-1 text-sm text-yellow-500">
-                  <AlertCircle className="w-4 h-4" />
-                  Não publicado
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {Object.entries(categories).map(([cat, items]) => (
-                <div key={cat}>
-                  <h4 className="text-sm font-semibold text-primary mb-2">{cat} ({items.length})</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {items.slice(0, 8).map(item => (
-                      <div key={item.id} className="bg-secondary rounded-lg p-2">
-                        <img src={item.image} alt={item.title} className="w-full aspect-[2/3] object-cover rounded mb-1" />
-                        <p className="text-xs text-foreground truncate">{item.title}</p>
-                      </div>
-                    ))}
-                    {items.length > 8 && (
-                      <div className="bg-secondary rounded-lg p-2 flex items-center justify-center">
-                        <p className="text-xs text-muted-foreground">+{items.length - 8} mais</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Publish Button */}
-        {hasUnpublished && (
-          <div className="glass-card rounded-xl p-6">
-            <div className="flex items-center justify-between">
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4"
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ type: "spring", duration: 0.5 }}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-4xl my-8"
+        >
+          {/* HEADER */}
+          <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border rounded-t-2xl p-6 flex justify-between items-center z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
+                <Shield className="w-6 h-6 text-yellow-500" />
+              </div>
               <div>
-                <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
-                  <Send className="w-5 h-5 text-primary" />
-                  Publicar para Usuários
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Torne o conteúdo visível para todos os usuários do StreamMax.
+                <h2 className="text-2xl font-bold">Painel Administrativo</h2>
+                <p className="text-sm text-muted-foreground">
+                  Logado como: {user?.email}
                 </p>
               </div>
-              <Button onClick={handlePublish} className="btn-primary-gradient gap-2">
-                <Check className="w-4 h-4" />
-                Publicar para Usuários
+            </div>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="hover:bg-destructive/10 hover:text-destructive"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {/* CONTEÚDO */}
+          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+            {/* PROGRESSO */}
+            {uploadProgress.status !== "idle" && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-secondary/30 rounded-lg p-6 border-2 border-primary/20"
+              >
+                <div className="flex items-center gap-3 mb-4">
+                  {uploadProgress.status === "processing" && (
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                  )}
+                  {uploadProgress.status === "done" && (
+                    <CheckCircle2 className="w-5 h-5 text-green-500" />
+                  )}
+                  {uploadProgress.status === "error" && (
+                    <AlertCircle className="w-5 h-5 text-red-500" />
+                  )}
+                  <span className="font-semibold">
+                    {uploadProgress.message}
+                  </span>
+                </div>
+
+                {uploadProgress.status === "processing" && (
+                  <>
+                    <Progress value={progressPercentage} className="mb-2" />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {uploadProgress.itemsLoaded.toLocaleString()} itens
+                        carregados
+                      </span>
+                      <span>{progressPercentage}%</span>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {/* ESTATÍSTICAS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-secondary/30 rounded-lg p-6 space-y-3">
+                <div className="flex justify-between">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <List className="w-4 h-4" />
+                    Preview
+                  </h3>
+                  {totalPreview > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearPreview}
+                      className="text-red-500"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Limpar
+                    </Button>
+                  )}
+                </div>
+                <div className="text-sm space-y-2">
+                  <div className="flex justify-between">
+                    <span>Filmes</span>
+                    <span className="font-bold">
+                      {moviesInPreview.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Séries</span>
+                    <span className="font-bold">
+                      {seriesInPreview.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between font-semibold">
+                    <span>Total</span>
+                    <span className="text-yellow-500">
+                      {totalPreview.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-secondary/30 rounded-lg p-6 space-y-3">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Publicado
+                </h3>
+                <div className="text-sm space-y-2">
+                  <div className="flex justify-between">
+                    <span>Filmes</span>
+                    <span className="font-bold">
+                      {
+                        publishedContent.filter(
+                          (i) => i.source === "movie"
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Séries</span>
+                    <span className="font-bold">
+                      {
+                        publishedContent.filter(
+                          (i) => i.source === "series"
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between font-semibold">
+                    <span>Total</span>
+                    <span className="text-primary">
+                      {totalPublished.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SELEÇÃO */}
+            <div>
+              <h3 className="text-lg font-semibold mb-4">
+                Selecione a Categoria de Upload
+              </h3>
+              <div className="flex gap-2 mb-4">
+                <Button
+                  variant={uploadType === "movie" ? "default" : "secondary"}
+                  onClick={() => setUploadType("movie")}
+                  disabled={uploadProgress.status === "processing"}
+                >
+                  <Film className="w-4 h-4 mr-2" />
+                  Filmes
+                </Button>
+                <Button
+                  variant={uploadType === "series" ? "default" : "secondary"}
+                  onClick={() => setUploadType("series")}
+                  disabled={uploadProgress.status === "processing"}
+                >
+                  <Tv className="w-4 h-4 mr-2" />
+                  Séries
+                </Button>
+              </div>
+            </div>
+
+            {/* UPLOAD */}
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".zip,.m3u,.m3u8"
+                onChange={handleUpload}
+                className="hidden"
+                disabled={uploadProgress.status === "processing"}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadProgress.status === "processing"}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Fazer Upload
               </Button>
             </div>
+
+            {/* PUBLICAR */}
+            {hasUnpublished && uploadProgress.status !== "processing" && (
+              <div className="pt-4 border-t border-border">
+                <Button onClick={handlePublish} size="lg">
+                  <Send className="w-4 h-4 mr-2" />
+                  Publicar Todo o Conteúdo ({totalUnpublished.toLocaleString()})
+                </Button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </motion.div>
+
+          {/* FOOTER */}
+          <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t border-border rounded-b-2xl p-4 flex justify-end">
+            <Button variant="secondary" onClick={onClose}>
+              Fechar Painel
+            </Button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

@@ -11,16 +11,27 @@ const LoginForm = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
   const { toast } = useToast();
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
       toast({
         title: "Campos obrigatórios",
-        description: "Por favor, preencha todos os campos.",
+        description: "Preencha todos os campos",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validação básica de email
+    if (!email.includes("@")) {
+      toast({
+        title: "Email inválido",
+        description: "Digite um email válido",
         variant: "destructive",
       });
       return;
@@ -28,25 +39,33 @@ const LoginForm = () => {
 
     setIsLoading(true);
     
-    // Simular delay de rede
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    const success = login(email, password);
-    
-    if (success) {
+    try {
+      const success = await login(email, password);
+
+      if (success) {
+        toast({ 
+          title: "Login realizado!", 
+          description: `Bem-vindo de volta!` 
+        });
+        // Limpa os campos após sucesso
+        setEmail("");
+        setPassword("");
+      } else {
+        toast({
+          title: "Credenciais inválidas",
+          description: "Email ou senha incorretos",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
       toast({
-        title: "Login realizado!",
-        description: "Bem-vindo de volta ao StreamMax.",
-      });
-    } else {
-      toast({
-        title: "Credenciais inválidas",
-        description: "E-mail ou senha incorretos. Tente novamente.",
+        title: "Erro ao fazer login",
+        description: "Tente novamente mais tarde",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
@@ -62,16 +81,6 @@ const LoginForm = () => {
         <p className="text-muted-foreground">Acesse sua conta para continuar</p>
       </div>
 
-      {/* Demo credentials hint */}
-      <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 mb-6 text-center space-y-1">
-        <p className="text-xs text-muted-foreground">
-          <span className="text-primary font-semibold">Admin:</span> admin@admin.com / admin123
-        </p>
-        <p className="text-xs text-muted-foreground">
-          <span className="text-primary font-semibold">Usuário:</span> user@user.com / user123
-        </p>
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
           <label className="text-sm font-medium text-foreground">E-mail</label>
@@ -83,6 +92,7 @@ const LoginForm = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="pl-10 bg-secondary border-border focus:border-primary h-12"
+              disabled={isLoading}
             />
           </div>
         </div>
@@ -97,25 +107,17 @@ const LoginForm = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="pl-10 pr-10 bg-secondary border-border focus:border-primary h-12"
+              disabled={isLoading}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              disabled={isLoading}
             >
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
-        </div>
-
-        <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" className="rounded border-border bg-secondary" />
-            <span className="text-muted-foreground">Lembrar de mim</span>
-          </label>
-          <a href="#" className="text-primary hover:underline">
-            Esqueceu a senha?
-          </a>
         </div>
 
         <Button
@@ -125,13 +127,6 @@ const LoginForm = () => {
         >
           {isLoading ? "Entrando..." : "Entrar"}
         </Button>
-
-        <p className="text-center text-muted-foreground text-sm">
-          Não tem uma conta?{" "}
-          <a href="#plans" className="text-primary hover:underline font-medium">
-            Assine agora
-          </a>
-        </p>
       </form>
     </motion.div>
   );
