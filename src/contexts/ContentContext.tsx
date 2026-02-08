@@ -1,4 +1,6 @@
-// --- INÍCIO: src/contexts/ContentContext.tsx ---
+// 🔥 CONTENT CONTEXT - Sistema COMPLETO de Gerenciamento de Conteúdo
+// Este arquivo gerencia filmes, séries e persistência no Firebase
+
 import {
   createContext,
   useContext,
@@ -22,7 +24,6 @@ export interface M3UItem {
   source?: string; // 'movie' ou 'series'
 }
 
-// Nova interface para série enriquecida com dados do TMDb
 export interface EnrichedSeries extends GroupedSeries {
   tmdbId?: number;
   poster?: string;
@@ -32,7 +33,6 @@ export interface EnrichedSeries extends GroupedSeries {
   rating?: number;
 }
 
-// Metadata sobre o conteúdo
 export interface ContentMetadata {
   lastUpdated: string;
   totalMovies: number;
@@ -41,41 +41,22 @@ export interface ContentMetadata {
 }
 
 interface ContentContextType {
-  // Conteúdo bruto
   previewContent: M3UItem[];
   publishedContent: M3UItem[];
-  
-  // Filmes separados
   previewMovies: M3UItem[];
   publishedMovies: M3UItem[];
-  
-  // Séries organizadas
   previewSeries: EnrichedSeries[];
   publishedSeries: EnrichedSeries[];
-  
-  // Metadata
   metadata: ContentMetadata;
-  
-  // Funções
   setPreviewContent: React.Dispatch<React.SetStateAction<M3UItem[]>>;
   publishContent: () => void;
   hasUnpublished: boolean;
-  
-  // Enriquecer séries com dados do TMDb
   enrichSeries: (series: GroupedSeries, tmdbData: any) => void;
-  
-  // Limpar dados
   clearAllData: () => void;
   clearPreview: () => void;
-  
-  // Histórico
   getUploadHistory: () => Promise<any[]>;
-  
-  // Auto-save status
   isAutoSaving: boolean;
   lastSaved: string | null;
-  
-  // Loading state
   isLoading: boolean;
 }
 
@@ -98,46 +79,68 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Ref para controlar se já carregou dados iniciais
   const initialLoadDone = useRef(false);
-  
-  // Ref para evitar save desnecessário durante load
   const isLoadingData = useRef(true);
 
-  // 🔥 CARREGAR DADOS DO FIREBASE NA INICIALIZAÇÃO - APENAS UMA VEZ
+  // 🔥 CARREGAR DADOS DO FIREBASE - PRIMEIRA CARGA
   useEffect(() => {
-    if (initialLoadDone.current) return;
+    if (initialLoadDone.current) {
+      console.log("⏭️ [CONTEXT] Carregamento inicial já feito, pulando...");
+      return;
+    }
     
     const loadData = async () => {
       isLoadingData.current = true;
       setIsLoading(true);
-      console.log("📥 Carregando dados do Firebase...");
+      console.log("📥 [CONTEXT] ========== INICIANDO CARREGAMENTO ==========");
       
       try {
+        // Carregar todos os dados em paralelo
         const [content, seriesData, meta] = await Promise.all([
           FirebaseBackend.loadPublishedContent(),
           FirebaseBackend.loadEnrichedSeriesData(),
           FirebaseBackend.loadMetadata()
         ]);
 
-        if (content && content.length > 0) {
-          console.log("✅ Dados encontrados no Firebase:", content.length, "itens");
-          setPublishedContent(content);
+        console.log("📥 [CONTEXT] Dados recebidos:");
+        console.log("  📦 Conteúdo:", content?.length || 0, "itens");
+        console.log("  📺 Séries TMDb:", Object.keys(seriesData || {}).length);
+        console.log("  📊 Metadata:", meta);
+
+        // ✅ APLICAR CONTEÚDO PUBLICADO
+        if (content && Array.isArray(content)) {
+          if (content.length > 0) {
+            console.log("✅ [CONTEXT] Aplicando conteúdo ao estado:");
+            console.log("  🎬 Filmes:", content.filter(i => i.source === 'movie').length);
+            console.log("  📺 Episódios:", content.filter(i => i.source === 'series').length);
+            console.log("  📌 Primeiro item:", content[0]);
+            
+            setPublishedContent(content);
+          } else {
+            console.log("ℹ️ [CONTEXT] Array vazio - primeira vez sem dados");
+            setPublishedContent([]);
+          }
         } else {
-          console.log("ℹ️ Nenhum dado encontrado no Firebase");
+          console.warn("⚠️ [CONTEXT] Dados não são um array válido!");
+          setPublishedContent([]);
         }
         
+        // Aplicar dados de séries
         if (seriesData && Object.keys(seriesData).length > 0) {
           setEnrichedSeriesData(seriesData);
         }
         
+        // Aplicar metadata
         if (meta) {
           setMetadata(meta);
         }
         
         initialLoadDone.current = true;
+        console.log("✅ [CONTEXT] ========== CARREGAMENTO CONCLUÍDO ==========");
+        
       } catch (error) {
-        console.error("❌ Erro ao carregar dados:", error);
+        console.error("❌ [CONTEXT] Erro ao carregar:", error);
+        setPublishedContent([]);
       } finally {
         setIsLoading(false);
         isLoadingData.current = false;
@@ -154,17 +157,17 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   );
 
   // Separar filmes publicados
-  const publishedMovies = useMemo(
-    () => publishedContent.filter((item) => item.source === "movie"),
-    [publishedContent]
-  );
+  const publishedMovies = useMemo(() => {
+    const movies = publishedContent.filter((item) => item.source === "movie");
+    console.log("🎬 [CONTEXT] Filmes publicados:", movies.length);
+    return movies;
+  }, [publishedContent]);
 
   // Agrupar séries do preview
   const previewSeries = useMemo(() => {
     const seriesItems = previewContent.filter((item) => item.source === "series");
     const grouped = groupEpisodesBySeries(seriesItems);
     
-    // Enriquecer com dados do TMDb salvos
     return grouped.map((series) => {
       const tmdbData = enrichedSeriesData[series.normalizedName];
       return {
@@ -184,7 +187,8 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     const seriesItems = publishedContent.filter((item) => item.source === "series");
     const grouped = groupEpisodesBySeries(seriesItems);
     
-    // Enriquecer com dados do TMDb salvos
+    console.log("📺 [CONTEXT] Séries publicadas:", grouped.length);
+    
     return grouped.map((series) => {
       const tmdbData = enrichedSeriesData[series.normalizedName];
       return {
@@ -199,31 +203,36 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [publishedContent, enrichedSeriesData]);
 
-  // 🔥 SALVAR NO FIREBASE QUANDO CONTEÚDO PUBLICADO MUDAR
-  // Mas APENAS após o carregamento inicial estar completo
+  // 🔥 SALVAR NO FIREBASE QUANDO PUBLICAR
   useEffect(() => {
     // Não salvar durante carregamento inicial
     if (isLoadingData.current || !initialLoadDone.current) {
-      console.log("⏭️ Ignorando save durante carregamento inicial");
+      console.log("⏭️ [CONTEXT] Ignorando save - carregamento inicial");
       return;
     }
     
-    // Não salvar se estiver vazio (pode ser estado inicial)
+    // Não salvar se vazio (exceto se for limpeza intencional)
     if (publishedContent.length === 0) {
-      console.log("⏭️ Conteúdo vazio, não salvando");
+      console.log("⏭️ [CONTEXT] Conteúdo vazio, não salvando");
       return;
     }
 
     const saveData = async () => {
-      console.log("💾 Salvando conteúdo publicado no Firebase...", publishedContent.length, "itens");
+      console.log("💾 [CONTEXT] Iniciando save automático...");
+      console.log("💾 [CONTEXT] Total de itens:", publishedContent.length);
       setIsAutoSaving(true);
       
       try {
-        await FirebaseBackend.savePublishedContent(publishedContent);
-        setLastSaved(dateUtils.format(new Date()));
-        console.log("✅ Conteúdo salvo com sucesso!");
+        const success = await FirebaseBackend.savePublishedContent(publishedContent);
+        
+        if (success) {
+          setLastSaved(dateUtils.format(new Date()));
+          console.log("✅ [CONTEXT] Save automático concluído!");
+        } else {
+          console.error("❌ [CONTEXT] Falha no save automático");
+        }
       } catch (error) {
-        console.error("❌ Erro ao salvar:", error);
+        console.error("❌ [CONTEXT] Erro ao salvar:", error);
       } finally {
         setTimeout(() => setIsAutoSaving(false), 500);
       }
@@ -232,31 +241,25 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     saveData();
   }, [publishedContent]);
 
-  // 🔥 SALVAR DADOS DE SÉRIES NO FIREBASE
+  // 🔥 SALVAR DADOS DE SÉRIES
   useEffect(() => {
-    if (isLoadingData.current || !initialLoadDone.current) {
-      return;
-    }
-    
-    if (Object.keys(enrichedSeriesData).length === 0) {
-      return;
-    }
+    if (isLoadingData.current || !initialLoadDone.current) return;
+    if (Object.keys(enrichedSeriesData).length === 0) return;
 
     const saveData = async () => {
       try {
         await FirebaseBackend.saveEnrichedSeriesData(enrichedSeriesData);
-        console.log("✅ Dados de séries salvos!");
+        console.log("✅ [CONTEXT] Dados de séries salvos");
       } catch (error) {
-        console.error("❌ Erro ao salvar dados de séries:", error);
+        console.error("❌ [CONTEXT] Erro ao salvar dados de séries");
       }
     };
     
-    // Debounce de 1 segundo
     const timeout = setTimeout(saveData, 1000);
     return () => clearTimeout(timeout);
   }, [enrichedSeriesData]);
 
-  // Atualizar metadata quando conteúdo mudar
+  // Atualizar metadata
   useEffect(() => {
     const totalEpisodesPublished = publishedSeries.reduce(
       (sum, series) => sum + series.totalEpisodes,
@@ -272,13 +275,12 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     
     setMetadata(newMetadata);
     
-    // Salvar metadata no Firebase
     if (!isLoadingData.current && initialLoadDone.current && publishedContent.length > 0) {
       FirebaseBackend.saveMetadata(newMetadata);
     }
   }, [publishedMovies, publishedSeries, publishedContent.length]);
 
-  // Enriquecer série com dados do TMDb
+  // Enriquecer série com TMDb
   const enrichSeries = useCallback(
     (series: GroupedSeries, tmdbData: any) => {
       setIsAutoSaving(true);
@@ -296,20 +298,21 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
 
   // Publicar conteúdo
   const publishContent = useCallback(() => {
-    console.log("📤 Publicando conteúdo...", previewContent.length, "itens");
+    console.log("📤 [CONTEXT] Publicando conteúdo...");
+    console.log("📤 [CONTEXT] Preview tem", previewContent.length, "itens");
     setIsAutoSaving(true);
     
-    // Mescla preview com publicado, evitando duplicatas
     setPublishedContent((current) => {
       const currentIds = new Set(current.map(item => item.id));
       const newItems = previewContent.filter(item => !currentIds.has(item.id));
       const merged = [...current, ...newItems];
       
-      console.log("📊 Total após merge:", merged.length, "itens");
+      console.log("📤 [CONTEXT] Total após merge:", merged.length);
+      console.log("📤 [CONTEXT] Novos itens:", newItems.length);
+      
       return merged;
     });
 
-    // Adicionar ao histórico (localStorage)
     UploadHistoryManager.addUpload({
       uploadedAt: new Date().toISOString(),
       totalItems: previewContent.length,
@@ -321,14 +324,14 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     setTimeout(() => setIsAutoSaving(false), 500);
   }, [previewContent]);
 
-  // Limpar apenas preview
+  // Limpar preview
   const clearPreview = useCallback(() => {
     setPreviewContent([]);
   }, []);
 
   // Limpar todos os dados
   const clearAllData = useCallback(async () => {
-    console.log("🗑️ Limpando todos os dados...");
+    console.log("🗑️ [CONTEXT] Limpando todos os dados...");
     
     setPreviewContent([]);
     setPublishedContent([]);
@@ -340,32 +343,32 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       totalEpisodes: 0,
     });
     
-    // Limpar Firebase
     try {
-      await FirebaseBackend.savePublishedContent([]);
-      await FirebaseBackend.saveEnrichedSeriesData({});
-      await FirebaseBackend.saveMetadata({
-        lastUpdated: new Date().toISOString(),
-        totalMovies: 0,
-        totalSeries: 0,
-        totalEpisodes: 0,
-      });
-      console.log("✅ Dados limpos no Firebase");
+      await FirebaseBackend.clearAllData();
+      console.log("✅ [CONTEXT] Dados limpos no Firebase");
     } catch (error) {
-      console.error("❌ Erro ao limpar Firebase:", error);
+      console.error("❌ [CONTEXT] Erro ao limpar Firebase");
     }
   }, []);
 
-  // Obter histórico de uploads
+  // Histórico
   const getUploadHistory = useCallback(async () => {
     return UploadHistoryManager.getHistory();
   }, []);
 
-  // Verificar se há conteúdo não publicado
+  // Verificar se há não publicados
   const hasUnpublished = useMemo(() => {
     const publishedIds = new Set(publishedContent.map(i => i.id));
     return previewContent.some(item => !publishedIds.has(item.id));
   }, [previewContent, publishedContent]);
+
+  // Log para debug
+  useEffect(() => {
+    console.log("📊 [CONTEXT] Estado atual:");
+    console.log("  🎬 Filmes publicados:", publishedMovies.length);
+    console.log("  📺 Séries publicadas:", publishedSeries.length);
+    console.log("  📦 Total publicado:", publishedContent.length);
+  }, [publishedMovies.length, publishedSeries.length, publishedContent.length]);
 
   return (
     <ContentContext.Provider
@@ -401,4 +404,3 @@ export const useContent = () => {
   }
   return context;
 };
-// --- FIM: src/contexts/ContentContext.tsx ---

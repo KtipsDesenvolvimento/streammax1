@@ -9,6 +9,7 @@ import VideoPlayer from "@/components/VideoPlayer";
 import AdminPanel from "@/components/AdminPanel";
 import { useAuth } from "@/contexts/AuthContext";
 import { useContent } from "@/contexts/ContentContext";
+import { FirebaseDebugPanel } from "@/components/FirebaseDebugPanel";
 
 const ROW_LIMIT = 12;
 
@@ -131,6 +132,7 @@ const Dashboard = () => {
       )}
     </div>
   );
+  <FirebaseDebugPanel />
 };
 
 export default Dashboard;
