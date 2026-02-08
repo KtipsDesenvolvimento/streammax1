@@ -1,9 +1,13 @@
+// 🎛️ ADMIN PANEL MELHORADO - Com Carregamento Automático + Upload Manual
+// Este painel oferece DUAS formas de carregar conteúdo:
+// 1. 🔄 Carregamento automático de arquivo fixo (playlist.m3u na pasta public)
+// 2. 📤 Upload manual de arquivo
+
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
   X,
-  UserPlus,
   Film,
   Tv,
   Shield,
@@ -13,12 +17,23 @@ import {
   AlertCircle,
   Trash2,
   List,
+  Download,
+  RefreshCw,
+  Link as LinkIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useContent, M3UItem } from "@/contexts/ContentContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Progress } from "@/components/ui/progress";
+import { AutoPlaylistLoader } from "@/services/AutoPlaylistLoader";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 type UploadType = "movie" | "series";
 
@@ -34,12 +49,10 @@ interface UploadProgress {
   itemsLoaded: number;
 }
 
-// 🔥 LIMITE DE SEGURANÇA — evita travar a UI mesmo com 1MI+
 const MAX_PREVIEW_ITEMS = 50_000;
 
 const AdminPanel = ({ onClose }: AdminPanelProps) => {
-  const { isAdmin, user } = useAuth();
-
+  const { isAdmin } = useAuth();
   const {
     previewContent,
     setPreviewContent,
@@ -47,15 +60,13 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     hasUnpublished,
     publishedContent,
   } = useContent();
-
   const { toast } = useToast();
 
   const workerRef = useRef<Worker | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadType, setUploadType] = useState<UploadType>("movie");
-  const isLargeScale = uploadType === "series";
-
+  const [externalUrl, setExternalUrl] = useState("");
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
     status: "idle",
     message: "",
@@ -76,7 +87,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     }
   }, [isAdmin, onClose, toast]);
 
-  // 🚀 Worker preparado para escala massiva
+  // 🚀 Worker para upload manual
   useEffect(() => {
     workerRef.current = new Worker("/m3u-parser.worker.js");
 
@@ -98,10 +109,8 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
           const newItems = items.filter(
             (item: M3UItem) => !current.some((i) => i.id === item.id)
           );
-
           const merged = [...current, ...newItems];
 
-          // 🔥 PROTEÇÃO DE MEMÓRIA
           if (merged.length > MAX_PREVIEW_ITEMS) {
             return merged.slice(merged.length - MAX_PREVIEW_ITEMS);
           }
@@ -168,10 +177,12 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     return () => workerRef.current?.terminate();
   }, [setPreviewContent, toast]);
 
-  // 📤 Upload (escala automática)
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 📤 Upload manual
+  const handleManualUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !workerRef.current) return;
+
+    const isLargeScale = uploadType === "series";
 
     setUploadProgress({
       status: "processing",
@@ -192,6 +203,169 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // 🔄 Carregamento automático de arquivo fixo
+  const handleAutoLoad = async () => {
+    setUploadProgress({
+      status: "processing",
+      message: "🔄 Procurando arquivo fixo (playlist.m3u, .txt, .zip)...",
+      progress: 0,
+      total: 0,
+      itemsLoaded: 0,
+    });
+
+    try {
+      const result = await AutoPlaylistLoader.loadAutoPlaylist();
+
+      if (!result) {
+        setUploadProgress({
+          status: "error",
+          message: "❌ Nenhum arquivo fixo encontrado na pasta public/",
+          progress: 0,
+          total: 0,
+          itemsLoaded: 0,
+        });
+
+        toast({
+          title: "Arquivo não encontrado",
+          description: "Coloque um arquivo 'playlist.m3u' na pasta 'public/'",
+          variant: "destructive",
+        });
+
+        setTimeout(() => {
+          setUploadProgress({
+            status: "idle",
+            message: "",
+            progress: 0,
+            total: 0,
+            itemsLoaded: 0,
+          });
+        }, 3000);
+
+        return;
+      }
+
+      // Adicionar ao preview
+      setPreviewContent((current) => {
+        const newItems = result.content.filter(
+          (item) => !current.some((i) => i.id === item.id)
+        );
+        return [...current, ...newItems];
+      });
+
+      setUploadProgress({
+        status: "done",
+        message: `✅ ${result.content.length.toLocaleString()} itens carregados de ${result.source}`,
+        progress: 100,
+        total: 100,
+        itemsLoaded: result.content.length,
+      });
+
+      toast({
+        title: "Carregamento automático concluído!",
+        description: `${result.content.length} itens carregados`,
+      });
+
+      setTimeout(() => {
+        setUploadProgress({
+          status: "idle",
+          message: "",
+          progress: 0,
+          total: 0,
+          itemsLoaded: 0,
+        });
+      }, 3000);
+
+    } catch (error: any) {
+      setUploadProgress({
+        status: "error",
+        message: `❌ Erro: ${error.message}`,
+        progress: 0,
+        total: 0,
+        itemsLoaded: 0,
+      });
+
+      toast({
+        title: "Erro no carregamento",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  // 🌐 Carregar de URL externa
+  const handleExternalUrl = async () => {
+    if (!externalUrl.trim()) {
+      toast({
+        title: "URL vazia",
+        description: "Digite uma URL válida",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadProgress({
+      status: "processing",
+      message: `🌐 Baixando de: ${externalUrl}`,
+      progress: 0,
+      total: 0,
+      itemsLoaded: 0,
+    });
+
+    try {
+      const result = await AutoPlaylistLoader.loadFromExternalUrl(externalUrl);
+
+      if (!result) {
+        throw new Error("Erro ao carregar URL");
+      }
+
+      setPreviewContent((current) => {
+        const newItems = result.content.filter(
+          (item) => !current.some((i) => i.id === item.id)
+        );
+        return [...current, ...newItems];
+      });
+
+      setUploadProgress({
+        status: "done",
+        message: `✅ ${result.content.length.toLocaleString()} itens carregados`,
+        progress: 100,
+        total: 100,
+        itemsLoaded: result.content.length,
+      });
+
+      toast({
+        title: "URL carregada!",
+        description: `${result.content.length} itens carregados`,
+      });
+
+      setTimeout(() => {
+        setUploadProgress({
+          status: "idle",
+          message: "",
+          progress: 0,
+          total: 0,
+          itemsLoaded: 0,
+        });
+        setExternalUrl("");
+      }, 3000);
+
+    } catch (error: any) {
+      setUploadProgress({
+        status: "error",
+        message: `❌ ${error.message}`,
+        progress: 0,
+        total: 0,
+        itemsLoaded: 0,
+      });
+
+      toast({
+        title: "Erro ao carregar URL",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleClearPreview = () => {
     if (confirm("Tem certeza que deseja limpar todos os itens não publicados?")) {
       setPreviewContent([]);
@@ -210,25 +384,19 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     });
   };
 
-  // 📊 Estatísticas
+  // Estatísticas
   const totalPreview = previewContent.length;
   const totalPublished = publishedContent.length;
   const totalUnpublished = previewContent.filter(
     (item) => !publishedContent.some((p) => p.id === item.id)
   ).length;
 
-  const moviesInPreview = previewContent.filter(
-    (i) => i.source === "movie"
-  ).length;
-  const seriesInPreview = previewContent.filter(
-    (i) => i.source === "series"
-  ).length;
+  const moviesInPreview = previewContent.filter((i) => i.source === "movie").length;
+  const seriesInPreview = previewContent.filter((i) => i.source === "series").length;
 
   const progressPercentage =
     uploadProgress.total > 0
-      ? Math.floor(
-          (uploadProgress.progress / uploadProgress.total) * 100
-        )
+      ? Math.floor((uploadProgress.progress / uploadProgress.total) * 100)
       : 0;
 
   if (!isAdmin) return null;
@@ -259,7 +427,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
               <div>
                 <h2 className="text-2xl font-bold">Painel Administrativo</h2>
                 <p className="text-sm text-muted-foreground">
-                  Logado como: {user?.email}
+                  Carregamento Automático + Upload Manual
                 </p>
               </div>
             </div>
@@ -293,9 +461,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                   {uploadProgress.status === "error" && (
                     <AlertCircle className="w-5 h-5 text-red-500" />
                   )}
-                  <span className="font-semibold">
-                    {uploadProgress.message}
-                  </span>
+                  <span className="font-semibold">{uploadProgress.message}</span>
                 </div>
 
                 {uploadProgress.status === "processing" && (
@@ -303,8 +469,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                     <Progress value={progressPercentage} className="mb-2" />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>
-                        {uploadProgress.itemsLoaded.toLocaleString()} itens
-                        carregados
+                        {uploadProgress.itemsLoaded.toLocaleString()} itens carregados
                       </span>
                       <span>{progressPercentage}%</span>
                     </div>
@@ -336,15 +501,11 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                 <div className="text-sm space-y-2">
                   <div className="flex justify-between">
                     <span>Filmes</span>
-                    <span className="font-bold">
-                      {moviesInPreview.toLocaleString()}
-                    </span>
+                    <span className="font-bold">{moviesInPreview.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Séries</span>
-                    <span className="font-bold">
-                      {seriesInPreview.toLocaleString()}
-                    </span>
+                    <span className="font-bold">{seriesInPreview.toLocaleString()}</span>
                   </div>
                   <div className="border-t pt-2 flex justify-between font-semibold">
                     <span>Total</span>
@@ -364,81 +525,130 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                   <div className="flex justify-between">
                     <span>Filmes</span>
                     <span className="font-bold">
-                      {
-                        publishedContent.filter(
-                          (i) => i.source === "movie"
-                        ).length
-                      }
+                      {publishedContent.filter((i) => i.source === "movie").length}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Séries</span>
                     <span className="font-bold">
-                      {
-                        publishedContent.filter(
-                          (i) => i.source === "series"
-                        ).length
-                      }
+                      {publishedContent.filter((i) => i.source === "series").length}
                     </span>
                   </div>
                   <div className="border-t pt-2 flex justify-between font-semibold">
                     <span>Total</span>
-                    <span className="text-primary">
-                      {totalPublished.toLocaleString()}
-                    </span>
+                    <span className="text-primary">{totalPublished.toLocaleString()}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* SELEÇÃO */}
-            <div>
-              <h3 className="text-lg font-semibold mb-4">
-                Selecione a Categoria de Upload
-              </h3>
-              <div className="flex gap-2 mb-4">
-                <Button
-                  variant={uploadType === "movie" ? "default" : "secondary"}
-                  onClick={() => setUploadType("movie")}
-                  disabled={uploadProgress.status === "processing"}
-                >
-                  <Film className="w-4 h-4 mr-2" />
-                  Filmes
-                </Button>
-                <Button
-                  variant={uploadType === "series" ? "default" : "secondary"}
-                  onClick={() => setUploadType("series")}
-                  disabled={uploadProgress.status === "processing"}
-                >
-                  <Tv className="w-4 h-4 mr-2" />
-                  Séries
-                </Button>
-              </div>
-            </div>
+            {/* TABS: AUTO-LOAD vs UPLOAD */}
+            <Tabs defaultValue="auto" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="auto">
+                  <Download className="w-4 h-4 mr-2" />
+                  Carregamento Automático
+                </TabsTrigger>
+                <TabsTrigger value="manual">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload Manual
+                </TabsTrigger>
+              </TabsList>
 
-            {/* UPLOAD */}
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".zip,.m3u,.m3u8"
-                onChange={handleUpload}
-                className="hidden"
-                disabled={uploadProgress.status === "processing"}
-              />
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploadProgress.status === "processing"}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Fazer Upload
-              </Button>
-            </div>
+              {/* TAB: CARREGAMENTO AUTOMÁTICO */}
+              <TabsContent value="auto" className="space-y-4">
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+                  <h3 className="font-semibold mb-2 flex items-center gap-2">
+                    <Download className="w-4 h-4" />
+                    Como funciona?
+                  </h3>
+                  <ul className="text-sm space-y-1 text-muted-foreground list-disc list-inside">
+                    <li>Coloque um arquivo na pasta <code className="bg-secondary px-1 rounded">public/</code> com o nome <code className="bg-secondary px-1 rounded">playlist.m3u</code></li>
+                    <li>Formatos aceitos: .m3u, .m3u8, .txt, .zip</li>
+                    <li>Clique em "Carregar Arquivo Fixo" abaixo</li>
+                  </ul>
+                </div>
+
+                <Button
+                  onClick={handleAutoLoad}
+                  disabled={uploadProgress.status === "processing"}
+                  className="w-full"
+                  size="lg"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Carregar Arquivo Fixo (playlist.m3u)
+                </Button>
+
+                <div className="border-t pt-4">
+                  <h3 className="font-semibold mb-3">Ou carregar de URL externa:</h3>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="https://exemplo.com/playlist.m3u"
+                      value={externalUrl}
+                      onChange={(e) => setExternalUrl(e.target.value)}
+                      disabled={uploadProgress.status === "processing"}
+                    />
+                    <Button
+                      onClick={handleExternalUrl}
+                      disabled={uploadProgress.status === "processing" || !externalUrl.trim()}
+                    >
+                      <LinkIcon className="w-4 h-4 mr-2" />
+                      Carregar
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* TAB: UPLOAD MANUAL */}
+              <TabsContent value="manual" className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Selecione a Categoria</h3>
+                  <div className="flex gap-2 mb-4">
+                    <Button
+                      variant={uploadType === "movie" ? "default" : "secondary"}
+                      onClick={() => setUploadType("movie")}
+                      disabled={uploadProgress.status === "processing"}
+                    >
+                      <Film className="w-4 h-4 mr-2" />
+                      Filmes
+                    </Button>
+                    <Button
+                      variant={uploadType === "series" ? "default" : "secondary"}
+                      onClick={() => setUploadType("series")}
+                      disabled={uploadProgress.status === "processing"}
+                    >
+                      <Tv className="w-4 h-4 mr-2" />
+                      Séries
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".zip,.m3u,.m3u8,.txt"
+                    onChange={handleManualUpload}
+                    className="hidden"
+                    disabled={uploadProgress.status === "processing"}
+                  />
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadProgress.status === "processing"}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Selecionar Arquivo (.zip, .m3u, .txt)
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             {/* PUBLICAR */}
             {hasUnpublished && uploadProgress.status !== "processing" && (
               <div className="pt-4 border-t border-border">
-                <Button onClick={handlePublish} size="lg">
+                <Button onClick={handlePublish} size="lg" className="w-full">
                   <Send className="w-4 h-4 mr-2" />
                   Publicar Todo o Conteúdo ({totalUnpublished.toLocaleString()})
                 </Button>
