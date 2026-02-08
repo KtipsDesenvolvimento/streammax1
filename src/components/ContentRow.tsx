@@ -2,18 +2,12 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import MovieCard from "./MovieCard";
-
-interface Movie {
-  id: string;
-  title: string;
-  image: string;
-  url?: string;
-}
+import type { Movie } from "@/types/content";
 
 interface ContentRowProps {
   title: string;
   movies: Movie[];
-  onPlay?: (movie: Movie) => void;
+  onPlay?: (movie: { url: string; title: string }) => void;
   seeAllHref?: string;
 }
 
@@ -63,7 +57,7 @@ const ContentRow = ({ title, movies, onPlay, seeAllHref }: ContentRowProps) => {
                 title={movie.title}
                 image={movie.image}
                 delay={i * 0.03}
-                onPlay={() => onPlay?.(movie)}
+                onPlay={() => onPlay?.({ url: movie.url, title: movie.title })}
               />
             </div>
           ))}

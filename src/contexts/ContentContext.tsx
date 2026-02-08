@@ -1,6 +1,7 @@
 // 🎯 CONTENT CONTEXT - Gerenciamento de Estado com Carregamento Progressivo
+// Mantém compatibilidade com sistema antigo (publishedMovies, publishedSeries)
 
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { playlistLoader, M3UItem } from '@/services/PlaylistPayloader';
 
 interface Grupo {
@@ -20,6 +21,11 @@ interface ContentContextType {
   currentParte: number;
   items: M3UItem[];
   
+  // ✅ Compatibilidade com sistema antigo
+  publishedMovies: M3UItem[];
+  publishedSeries: M3UItem[];
+  publishedContent: M3UItem[];
+  
   // Controles de carregamento
   loadingIndex: boolean;
   loadingParte: boolean;
@@ -35,6 +41,14 @@ interface ContentContextType {
     partesCarregadas: number;
     totalItens: number;
     memoriaEmCache: string;
+  };
+
+  // Métodos extras para compatibilidade
+  metadata: {
+    totalMovies: number;
+    totalSeries: number;
+    totalEpisodes: number;
+    lastUpdated: string;
   };
 }
 
@@ -55,11 +69,43 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   const [totalPartes, setTotalPartes] = useState(0);
 
   /**
-   * 📥 Carregar índice no mount (apenas 1 vez)
+   * ✅ Computed properties para compatibilidade
+   */
+  const publishedMovies = useMemo(() => 
+    items.filter(item => item.source === 'movie'),
+    [items]
+  );
+
+  const publishedSeries = useMemo(() => 
+    items.filter(item => item.source === 'series'),
+    [items]
+  );
+
+  const publishedContent = useMemo(() => items, [items]);
+
+  const metadata = useMemo(() => ({
+    totalMovies: publishedMovies.length,
+    totalSeries: publishedSeries.length,
+    totalEpisodes: publishedSeries.length,
+    lastUpdated: new Date().toISOString()
+  }), [publishedMovies, publishedSeries]);
+
+  /**
+   * 📥 Carregar índice no mount
    */
   useEffect(() => {
     loadIndex();
   }, []);
+
+  /**
+   * 📥 Auto-carregar grupo 'filmes' após índice estar pronto
+   */
+  useEffect(() => {
+    if (indexLoaded && !currentGrupo) {
+      // Carregar automaticamente o grupo 'filmes'
+      selectGrupo('filmes');
+    }
+  }, [indexLoaded, currentGrupo]);
 
   /**
    * 📥 Função para carregar índice
@@ -88,7 +134,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   };
 
   /**
-   * 🎯 Selecionar grupo (limpa estado anterior e carrega primeira parte)
+   * 🎯 Selecionar grupo
    */
   const selectGrupo = useCallback(async (grupoId: string) => {
     if (currentGrupo === grupoId) return;
@@ -118,7 +164,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   }, [currentGrupo, grupos]);
 
   /**
-   * ➕ Carregar próxima parte (scroll infinito)
+   * ➕ Carregar próxima parte
    */
   const loadNextParte = useCallback(async () => {
     if (!currentGrupo || loadingParte) return;
@@ -136,7 +182,6 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     try {
       const parteItems = await playlistLoader.loadParte(currentGrupo, nextParte);
       
-      // Anexar itens ao final
       setItems(prev => [...prev, ...parteItems]);
       setCurrentParte(nextParte);
       
@@ -149,7 +194,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
   }, [currentGrupo, currentParte, totalPartes, loadingParte]);
 
   /**
-   * 🔄 Recarregar índice (quando admin atualiza)
+   * 🔄 Recarregar índice
    */
   const reloadIndex = useCallback(async () => {
     playlistLoader.clearAllCache();
@@ -175,13 +220,17 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       currentGrupo,
       currentParte,
       items,
+      publishedMovies,
+      publishedSeries,
+      publishedContent,
       loadingIndex,
       loadingParte,
       hasMorePartes,
       selectGrupo,
       loadNextParte,
       reloadIndex,
-      stats
+      stats,
+      metadata
     }}>
       {children}
     </ContentContext.Provider>

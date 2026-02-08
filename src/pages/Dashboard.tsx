@@ -1,83 +1,75 @@
-// 🎨 DASHBOARD - Interface com Scroll Infinito e Carregamento Progressivo
+// 🎨 DASHBOARD - Interface Principal com Visual Original
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useContent } from '@/contexts/ContentContext';
-import { Button } from '@/components/ui/button';
-import MovieCard from '@/components/MovieCard';
+import { useAuth } from '@/contexts/AuthContext';
+import FeaturedHero from '@/components/FeaturedHero';
+import ContentRow from '@/components/ContentRow';
+import SeriesRow from '@/components/SeriesRow';
+import DashboardHeader from '@/components/DashboardHeader';
+import VideoPlayer from '@/components/VideoPlayer';
+import AdminPanel from '@/components/AdminPanel';
+import Footer from '@/components/Footer';
+import { groupEpisodesBySeries } from '@/utils/seriesParser';
 import { Loader2 } from 'lucide-react';
 
 const Dashboard = () => {
+  const { isAdmin } = useAuth();
   const {
-    indexLoaded,
-    indexVersion,
-    grupos,
-    currentGrupo,
-    items,
+    publishedMovies,
+    publishedSeries,
     loadingIndex,
-    loadingParte,
-    hasMorePartes,
     selectGrupo,
-    loadNextParte,
-    stats
+    currentGrupo,
   } = useContent();
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [playerMovie, setPlayerMovie] = useState<{
+    url: string;
+    title: string;
+  } | null>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
 
-  /**
-   * 🔍 Observer para scroll infinito
-   */
+  // 🎯 Auto-carregar conteúdo inicial
   useEffect(() => {
-    if (!sentinelRef.current || !hasMorePartes) return;
+    if (!currentGrupo) {
+      // Carregar automaticamente filmes primeiro
+      selectGrupo('filmes');
+      
+      // Depois carregar séries em background
+      setTimeout(() => {
+        selectGrupo('series');
+      }, 1000);
+    }
+  }, [currentGrupo, selectGrupo]);
 
-    // Criar observer
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        const target = entries[0];
-        if (target.isIntersecting && !loadingParte && hasMorePartes) {
-          console.log('📜 [DASHBOARD] Sentinela visível, carregando próxima parte...');
-          loadNextParte();
-        }
-      },
-      {
-        root: null,
-        rootMargin: '200px', // Trigger 200px antes do fim
-        threshold: 0.1
-      }
-    );
+  // 📊 Organizar conteúdo
+  const featuredMovie = publishedMovies[0] || null;
+  
+  // Agrupar filmes por categoria - garantir que tem url
+  const moviesByCategory = publishedMovies
+    .filter(movie => movie.url) // Só filmes com URL válida
+    .reduce((acc, movie) => {
+      const category = movie.category || 'Sem Categoria';
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(movie);
+      return acc;
+    }, {} as Record<string, typeof publishedMovies>);
 
-    observerRef.current.observe(sentinelRef.current);
+  // Agrupar séries
+  const groupedSeries = groupEpisodesBySeries(publishedSeries);
 
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [hasMorePartes, loadingParte, loadNextParte]);
+  // 🎬 Handlers
+  const handlePlay = (movie: { url: string; title: string }) => {
+    setPlayerMovie(movie);
+  };
 
-  /**
-   * 🔄 Loading states
-   */
+  // 🔄 Loading State
   if (loadingIndex) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-muted-foreground">Carregando índice...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!indexLoaded) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-destructive mb-4">Erro ao carregar índice</p>
-          <Button onClick={() => window.location.reload()}>
-            Recarregar
-          </Button>
+          <p className="text-muted-foreground">Carregando catálogo...</p>
         </div>
       </div>
     );
@@ -85,134 +77,77 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* 📋 HEADER - Seleção de Grupos */}
-      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="container mx-auto p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-bold">StreamMax</h1>
-              <p className="text-sm text-muted-foreground">
-                Índice v{indexVersion}
+      <DashboardHeader onOpenAdmin={() => setShowAdmin(true)} />
+
+      {/* Hero Section - Filme em Destaque */}
+      <FeaturedHero 
+        movie={featuredMovie}
+        onPlay={() => featuredMovie && handlePlay({
+          url: featuredMovie.url,
+          title: featuredMovie.title
+        })}
+      />
+
+      {/* Conteúdo Principal */}
+      <div className="relative -mt-32 pb-12">
+        <div className="container mx-auto">
+          
+          {/* 🎬 FILMES POR CATEGORIA */}
+          {Object.entries(moviesByCategory).map(([category, movies]) => (
+            <ContentRow
+              key={category}
+              title={category}
+              movies={movies.slice(0, 20)}
+              onPlay={handlePlay}
+              seeAllHref={`/category/${encodeURIComponent(category)}`}
+            />
+          ))}
+
+          {/* 📺 SÉRIES */}
+          {groupedSeries.length > 0 && (
+            <SeriesRow
+              title="Séries"
+              series={groupedSeries.slice(0, 20).map(s => ({
+                ...s,
+                poster: s.episodes[0]?.image || '',
+                backdrop: s.episodes[0]?.image || '',
+                overview: '',
+                firstAirDate: '',
+                rating: 0,
+                tmdbId: null
+              }))}
+            />
+          )}
+
+          {/* Estado vazio */}
+          {publishedMovies.length === 0 && groupedSeries.length === 0 && (
+            <div className="py-20 text-center">
+              <h2 className="text-2xl font-bold mb-4">Nenhum conteúdo disponível</h2>
+              <p className="text-muted-foreground mb-8">
+                {isAdmin 
+                  ? "Faça upload de uma playlist para começar" 
+                  : "Aguardando conteúdo do administrador"}
               </p>
             </div>
-
-            {/* 📊 Estatísticas */}
-            {currentGrupo && (
-              <div className="text-right text-sm text-muted-foreground">
-                <p>Partes: {stats.partesCarregadas}</p>
-                <p>Itens: {stats.totalItens.toLocaleString()}</p>
-                <p>Cache: {stats.memoriaEmCache}</p>
-              </div>
-            )}
-          </div>
-
-          {/* 🎯 Seletor de Grupos */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {grupos.map(grupo => (
-              <Button
-                key={grupo.id}
-                onClick={() => selectGrupo(grupo.id)}
-                variant={currentGrupo === grupo.id ? 'default' : 'outline'}
-                disabled={loadingParte}
-                className="whitespace-nowrap"
-              >
-                {grupo.titulo}
-                <span className="ml-2 text-xs opacity-70">
-                  ({grupo.totalPartes} partes)
-                </span>
-              </Button>
-            ))}
-          </div>
+          )}
         </div>
-      </header>
+      </div>
 
-      {/* 📦 CONTEÚDO PRINCIPAL */}
-      <main ref={scrollRef} className="container mx-auto p-4">
-        {/* Estado vazio - nenhum grupo selecionado */}
-        {!currentGrupo && (
-          <div className="text-center py-20">
-            <h2 className="text-2xl font-bold mb-4">Bem-vindo ao StreamMax</h2>
-            <p className="text-muted-foreground mb-8">
-              Selecione um grupo acima para começar
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-              {grupos.map(grupo => (
-                <Button
-                  key={grupo.id}
-                  onClick={() => selectGrupo(grupo.id)}
-                  variant="outline"
-                  className="h-24 text-lg"
-                >
-                  {grupo.titulo}
-                  <br />
-                  <span className="text-sm opacity-70">
-                    {grupo.totalPartes} partes disponíveis
-                  </span>
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
+      <Footer />
 
-        {/* Grid de Conteúdo */}
-        {currentGrupo && items.length > 0 && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {items.map((item, index) => (
-                <MovieCard
-                  key={item.id}
-                  title={item.title}
-                  image={item.image}
-                  year=""
-                  duration=""
-                  rating=""
-                  delay={0}
-                  onPlay={() => console.log('Play:', item.title)}
-                />
-              ))}
-            </div>
+      {/* Video Player */}
+      {playerMovie && (
+        <VideoPlayer
+          url={playerMovie.url}
+          title={playerMovie.title}
+          onClose={() => setPlayerMovie(null)}
+        />
+      )}
 
-            {/* 👁️ SENTINELA - Trigger para scroll infinito */}
-            {hasMorePartes && (
-              <div
-                ref={sentinelRef}
-                className="py-8 text-center"
-              >
-                {loadingParte ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="text-muted-foreground">
-                      Carregando mais itens...
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    Role para carregar mais
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* ✅ Fim do conteúdo */}
-            {!hasMorePartes && !loadingParte && (
-              <div className="py-8 text-center text-muted-foreground">
-                <p>✅ Todos os itens carregados</p>
-                <p className="text-sm mt-2">
-                  Total: {items.length.toLocaleString()} itens
-                </p>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Loading inicial de grupo */}
-        {currentGrupo && items.length === 0 && loadingParte && (
-          <div className="py-20 text-center">
-            <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4 text-primary" />
-            <p className="text-muted-foreground">Carregando primeira parte...</p>
-          </div>
-        )}
-      </main>
+      {/* Admin Panel */}
+      {showAdmin && isAdmin && (
+        <AdminPanel onClose={() => setShowAdmin(false)} />
+      )}
     </div>
   );
 };
