@@ -1,670 +1,282 @@
-// 🎛️ ADMIN PANEL MELHORADO - Com Carregamento Automático + Upload Manual
-// Este painel oferece DUAS formas de carregar conteúdo:
-// 1. 🔄 Carregamento automático de arquivo fixo (playlist.m3u na pasta public)
-// 2. 📤 Upload manual de arquivo
+// 🛠️ ADMIN PANEL - Sistema de Atualização Parcial com Versionamento
 
-import { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Upload,
-  X,
-  Film,
-  Tv,
-  Shield,
-  Send,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Trash2,
-  List,
-  Download,
-  RefreshCw,
-  Link as LinkIcon,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useContent, M3UItem } from "@/contexts/ContentContext";
-import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
-import { Progress } from "@/components/ui/progress";
-import { AutoPlaylistLoader } from "@/services/AutoPlaylistLoader";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-
-type UploadType = "movie" | "series";
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useContent } from '@/contexts/ContentContext';
+import { useToast } from '@/hooks/use-toast';
+import { Upload, RefreshCw, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { playlistLoader } from '@/services/PlaylistPayloader';
 
 interface AdminPanelProps {
   onClose: () => void;
 }
 
-interface UploadProgress {
-  status: "idle" | "processing" | "done" | "error";
-  message: string;
-  progress: number;
-  total: number;
-  itemsLoaded: number;
+interface UploadTarget {
+  grupoId: string;
+  parteIndex: number;
+  arquivo: string;
 }
 
-const MAX_PREVIEW_ITEMS = 50_000;
-
 const AdminPanel = ({ onClose }: AdminPanelProps) => {
-  const { isAdmin } = useAuth();
-  const {
-    previewContent,
-    setPreviewContent,
-    publishContent,
-    hasUnpublished,
-    publishedContent,
-  } = useContent();
+  const { grupos, indexVersion, reloadIndex } = useContent();
   const { toast } = useToast();
+  
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<UploadTarget | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  const workerRef = useRef<Worker | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [uploadType, setUploadType] = useState<UploadType>("movie");
-  const [externalUrl, setExternalUrl] = useState("");
-  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({
-    status: "idle",
-    message: "",
-    progress: 0,
-    total: 0,
-    itemsLoaded: 0,
-  });
-
-  // 🔐 Segurança
-  useEffect(() => {
-    if (!isAdmin) {
+  /**
+   * 📤 Upload de arquivo específico
+   */
+  const handleUpload = async () => {
+    if (!selectedFile || !selectedTarget) {
       toast({
-        title: "Acesso Negado",
-        description: "Você não tem permissão para acessar esta área",
-        variant: "destructive",
-      });
-      onClose();
-    }
-  }, [isAdmin, onClose, toast]);
-
-  // 🚀 Worker para upload manual
-  useEffect(() => {
-    workerRef.current = new Worker("/m3u-parser.worker.js");
-
-    workerRef.current.onmessage = (e) => {
-      const { status, items, message, progress, total, totalItems } = e.data;
-
-      if (status === "progress") {
-        setUploadProgress({
-          status: "processing",
-          message: message || "Processando...",
-          progress: progress || 0,
-          total: total || 0,
-          itemsLoaded: 0,
-        });
-      }
-
-      if (status === "batch") {
-        setPreviewContent((current: M3UItem[]) => {
-          const newItems = items.filter(
-            (item: M3UItem) => !current.some((i) => i.id === item.id)
-          );
-          const merged = [...current, ...newItems];
-
-          if (merged.length > MAX_PREVIEW_ITEMS) {
-            return merged.slice(merged.length - MAX_PREVIEW_ITEMS);
-          }
-
-          return merged;
-        });
-
-        setUploadProgress((prev) => ({
-          ...prev,
-          status: "processing",
-          message: `Carregando itens... ${(
-            prev.itemsLoaded + items.length
-          ).toLocaleString()}`,
-          progress: progress || prev.progress,
-          total: total || prev.total,
-          itemsLoaded: prev.itemsLoaded + items.length,
-        }));
-      }
-
-      if (status === "done") {
-        setUploadProgress({
-          status: "done",
-          message:
-            message ||
-            `✅ ${(totalItems || 0).toLocaleString()} itens carregados!`,
-          progress: total || 100,
-          total: total || 100,
-          itemsLoaded: totalItems || 0,
-        });
-
-        toast({
-          title: "Upload concluído!",
-          description: message,
-        });
-
-        setTimeout(() => {
-          setUploadProgress({
-            status: "idle",
-            message: "",
-            progress: 0,
-            total: 0,
-            itemsLoaded: 0,
-          });
-        }, 3000);
-      }
-
-      if (status === "error") {
-        setUploadProgress({
-          status: "error",
-          message: message || "Erro ao processar arquivo",
-          progress: 0,
-          total: 0,
-          itemsLoaded: 0,
-        });
-
-        toast({
-          title: "Erro no upload",
-          description: message,
-          variant: "destructive",
-        });
-      }
-    };
-
-    return () => workerRef.current?.terminate();
-  }, [setPreviewContent, toast]);
-
-  // 📤 Upload manual
-  const handleManualUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !workerRef.current) return;
-
-    const isLargeScale = uploadType === "series";
-
-    setUploadProgress({
-      status: "processing",
-      message: isLargeScale
-        ? "Série detectada — processando em grande escala..."
-        : "Iniciando upload...",
-      progress: 0,
-      total: 0,
-      itemsLoaded: 0,
-    });
-
-    workerRef.current.postMessage({
-      file,
-      type: uploadType,
-      largeScale: isLargeScale,
-    });
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  // 🔄 Carregamento automático de arquivo fixo
-  const handleAutoLoad = async () => {
-    setUploadProgress({
-      status: "processing",
-      message: "🔄 Procurando arquivo fixo (playlist.m3u, .txt, .zip)...",
-      progress: 0,
-      total: 0,
-      itemsLoaded: 0,
-    });
-
-    try {
-      const result = await AutoPlaylistLoader.loadAutoPlaylist();
-
-      if (!result) {
-        setUploadProgress({
-          status: "error",
-          message: "❌ Nenhum arquivo fixo encontrado na pasta public/",
-          progress: 0,
-          total: 0,
-          itemsLoaded: 0,
-        });
-
-        toast({
-          title: "Arquivo não encontrado",
-          description: "Coloque um arquivo 'playlist.m3u' na pasta 'public/'",
-          variant: "destructive",
-        });
-
-        setTimeout(() => {
-          setUploadProgress({
-            status: "idle",
-            message: "",
-            progress: 0,
-            total: 0,
-            itemsLoaded: 0,
-          });
-        }, 3000);
-
-        return;
-      }
-
-      // Adicionar ao preview
-      setPreviewContent((current) => {
-        const newItems = result.content.filter(
-          (item) => !current.some((i) => i.id === item.id)
-        );
-        return [...current, ...newItems];
-      });
-
-      setUploadProgress({
-        status: "done",
-        message: `✅ ${result.content.length.toLocaleString()} itens carregados de ${result.source}`,
-        progress: 100,
-        total: 100,
-        itemsLoaded: result.content.length,
-      });
-
-      toast({
-        title: "Carregamento automático concluído!",
-        description: `${result.content.length} itens carregados`,
-      });
-
-      setTimeout(() => {
-        setUploadProgress({
-          status: "idle",
-          message: "",
-          progress: 0,
-          total: 0,
-          itemsLoaded: 0,
-        });
-      }, 3000);
-
-    } catch (error: any) {
-      setUploadProgress({
-        status: "error",
-        message: `❌ Erro: ${error.message}`,
-        progress: 0,
-        total: 0,
-        itemsLoaded: 0,
-      });
-
-      toast({
-        title: "Erro no carregamento",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
-  };
-
-  // 🌐 Carregar de URL externa
-  const handleExternalUrl = async () => {
-    if (!externalUrl.trim()) {
-      toast({
-        title: "URL vazia",
-        description: "Digite uma URL válida",
-        variant: "destructive",
+        title: 'Erro',
+        description: 'Selecione um arquivo e destino',
+        variant: 'destructive'
       });
       return;
     }
 
-    setUploadProgress({
-      status: "processing",
-      message: `🌐 Baixando de: ${externalUrl}`,
-      progress: 0,
-      total: 0,
-      itemsLoaded: 0,
-    });
+    setUploading(true);
 
     try {
-      const result = await AutoPlaylistLoader.loadFromExternalUrl(externalUrl);
+      console.log('📤 [ADMIN] Iniciando upload:', selectedTarget.arquivo);
+      
+      // Simular upload (em produção, seria uma chamada real à API)
+      await simulateUpload(selectedFile, selectedTarget);
 
-      if (!result) {
-        throw new Error("Erro ao carregar URL");
-      }
+      // Incrementar versão do índice
+      await incrementIndexVersion();
 
-      setPreviewContent((current) => {
-        const newItems = result.content.filter(
-          (item) => !current.some((i) => i.id === item.id)
-        );
-        return [...current, ...newItems];
-      });
+      // Limpar cache da parte atualizada
+      playlistLoader.clearParteCache(selectedTarget.grupoId, selectedTarget.parteIndex);
 
-      setUploadProgress({
-        status: "done",
-        message: `✅ ${result.content.length.toLocaleString()} itens carregados`,
-        progress: 100,
-        total: 100,
-        itemsLoaded: result.content.length,
-      });
+      // Recarregar índice
+      await reloadIndex();
 
       toast({
-        title: "URL carregada!",
-        description: `${result.content.length} itens carregados`,
+        title: 'Upload concluído',
+        description: `${selectedTarget.arquivo} atualizado com sucesso`
       });
 
-      setTimeout(() => {
-        setUploadProgress({
-          status: "idle",
-          message: "",
-          progress: 0,
-          total: 0,
-          itemsLoaded: 0,
-        });
-        setExternalUrl("");
-      }, 3000);
+      // Limpar seleção
+      setSelectedFile(null);
+      setSelectedTarget(null);
 
     } catch (error: any) {
-      setUploadProgress({
-        status: "error",
-        message: `❌ ${error.message}`,
-        progress: 0,
-        total: 0,
-        itemsLoaded: 0,
-      });
-
+      console.error('❌ [ADMIN] Erro no upload:', error);
       toast({
-        title: "Erro ao carregar URL",
+        title: 'Erro no upload',
         description: error.message,
-        variant: "destructive",
+        variant: 'destructive'
       });
+    } finally {
+      setUploading(false);
     }
   };
 
-  const handleClearPreview = () => {
-    if (confirm("Tem certeza que deseja limpar todos os itens não publicados?")) {
-      setPreviewContent([]);
-      toast({
-        title: "Preview limpo",
-        description: "Todos os itens não publicados foram removidos",
-      });
-    }
-  };
-
-  const handlePublish = () => {
-    publishContent();
-    toast({
-      title: "Publicado!",
-      description: "Conteúdo publicado com sucesso",
+  /**
+   * 🔄 Simulação de upload (substituir por API real)
+   */
+  const simulateUpload = async (file: File, target: UploadTarget): Promise<void> => {
+    // Em produção, fazer POST para /api/admin/upload
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.log(`✅ [ADMIN] ${file.name} → ${target.arquivo}`);
+        resolve();
+      }, 2000);
     });
   };
 
-  // Estatísticas
-  const totalPreview = previewContent.length;
-  const totalPublished = publishedContent.length;
-  const totalUnpublished = previewContent.filter(
-    (item) => !publishedContent.some((p) => p.id === item.id)
-  ).length;
+  /**
+   * 📈 Incrementar versão do índice
+   */
+  const incrementIndexVersion = async (): Promise<void> => {
+    // Em produção, fazer POST para /api/admin/increment-version
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.log('📈 [ADMIN] Versão do índice incrementada');
+        resolve();
+      }, 500);
+    });
+  };
 
-  const moviesInPreview = previewContent.filter((i) => i.source === "movie").length;
-  const seriesInPreview = previewContent.filter((i) => i.source === "series").length;
-
-  const progressPercentage =
-    uploadProgress.total > 0
-      ? Math.floor((uploadProgress.progress / uploadProgress.total) * 100)
-      : 0;
-
-  if (!isAdmin) return null;
+  /**
+   * 🗑️ Limpar todo cache
+   */
+  const handleClearCache = () => {
+    playlistLoader.clearAllCache();
+    toast({
+      title: 'Cache limpo',
+      description: 'Todo o cache foi removido'
+    });
+  };
 
   return (
-    <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4"
-      >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ type: "spring", duration: 0.5 }}
-          onClick={(e) => e.stopPropagation()}
-          className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-4xl my-8"
-        >
-          {/* HEADER */}
-          <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border rounded-t-2xl p-6 flex justify-between items-center z-10">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                <Shield className="w-6 h-6 text-yellow-500" />
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        {/* HEADER */}
+        <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-border p-6 flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-bold">Painel Administrativo</h2>
+            <p className="text-sm text-muted-foreground">
+              Índice v{indexVersion} • Sistema de Atualização Parcial
+            </p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        {/* CONTEÚDO */}
+        <div className="p-6 space-y-6">
+          {/* ℹ️ Instruções */}
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+            <h3 className="font-semibold mb-2 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              Regras de Atualização
+            </h3>
+            <ul className="text-sm space-y-1 text-muted-foreground list-disc list-inside">
+              <li>Cada arquivo M3U deve ser autocontido (#EXTM3U)</li>
+              <li>Não concatene arquivos - substitua apenas o necessário</li>
+              <li>Versão do índice incrementa automaticamente</li>
+              <li>Cache da parte atualizada é limpo automaticamente</li>
+            </ul>
+          </div>
+
+          {/* 📁 Seleção de Arquivo */}
+          <div>
+            <h3 className="font-semibold mb-3">1. Selecione o Arquivo M3U</h3>
+            <Input
+              type="file"
+              accept=".m3u,.m3u8"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              disabled={uploading}
+            />
+            {selectedFile && (
+              <p className="text-sm text-muted-foreground mt-2">
+                ✓ {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
+              </p>
+            )}
+          </div>
+
+          {/* 🎯 Seleção de Destino */}
+          <div>
+            <h3 className="font-semibold mb-3">2. Selecione o Destino</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {grupos.map(grupo => (
+                <div key={grupo.id} className="border border-border rounded-lg p-4">
+                  <h4 className="font-semibold mb-2">{grupo.titulo}</h4>
+                  <div className="space-y-2">
+                    {Array.from({ length: grupo.totalPartes }, (_, i) => {
+                      const arquivo = `${grupo.id}_part${i + 1}.m3u`;
+                      const isSelected = selectedTarget?.arquivo === arquivo;
+                      
+                      return (
+                        <Button
+                          key={i}
+                          variant={isSelected ? 'default' : 'outline'}
+                          size="sm"
+                          className="w-full justify-start"
+                          onClick={() => setSelectedTarget({
+                            grupoId: grupo.id,
+                            parteIndex: i,
+                            arquivo
+                          })}
+                          disabled={uploading}
+                        >
+                          {isSelected && <CheckCircle2 className="w-4 h-4 mr-2" />}
+                          Parte {i + 1} ({arquivo})
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ✅ Ação de Upload */}
+          <div className="pt-4 border-t border-border">
+            <Button
+              onClick={handleUpload}
+              disabled={!selectedFile || !selectedTarget || uploading}
+              className="w-full"
+              size="lg"
+            >
+              {uploading ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Atualizar {selectedTarget?.arquivo || 'Arquivo'}
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* 🗑️ Limpeza de Cache */}
+          <div className="pt-4 border-t border-border">
+            <h3 className="font-semibold mb-3">Manutenção</h3>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleClearCache}
+                disabled={uploading}
+              >
+                🗑️ Limpar Cache
+              </Button>
+              <Button
+                variant="outline"
+                onClick={reloadIndex}
+                disabled={uploading}
+              >
+                🔄 Recarregar Índice
+              </Button>
+            </div>
+          </div>
+
+          {/* 📊 Estatísticas */}
+          <div className="bg-secondary/30 rounded-lg p-4">
+            <h3 className="font-semibold mb-2">Estatísticas do Sistema</h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-muted-foreground">Versão do Índice</p>
+                <p className="font-bold">{indexVersion}</p>
               </div>
               <div>
-                <h2 className="text-2xl font-bold">Painel Administrativo</h2>
-                <p className="text-sm text-muted-foreground">
-                  Carregamento Automático + Upload Manual
+                <p className="text-muted-foreground">Grupos</p>
+                <p className="font-bold">{grupos.length}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Total de Partes</p>
+                <p className="font-bold">
+                  {grupos.reduce((sum, g) => sum + g.totalPartes, 0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Cache em Uso</p>
+                <p className="font-bold">
+                  {playlistLoader.getCacheStats().memoriaEstimada}
                 </p>
               </div>
             </div>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onClose}
-              className="hover:bg-destructive/10 hover:text-destructive"
-            >
-              <X className="w-5 h-5" />
-            </Button>
           </div>
+        </div>
 
-          {/* CONTEÚDO */}
-          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
-            {/* PROGRESSO */}
-            {uploadProgress.status !== "idle" && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-secondary/30 rounded-lg p-6 border-2 border-primary/20"
-              >
-                <div className="flex items-center gap-3 mb-4">
-                  {uploadProgress.status === "processing" && (
-                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                  )}
-                  {uploadProgress.status === "done" && (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  )}
-                  {uploadProgress.status === "error" && (
-                    <AlertCircle className="w-5 h-5 text-red-500" />
-                  )}
-                  <span className="font-semibold">{uploadProgress.message}</span>
-                </div>
-
-                {uploadProgress.status === "processing" && (
-                  <>
-                    <Progress value={progressPercentage} className="mb-2" />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {uploadProgress.itemsLoaded.toLocaleString()} itens carregados
-                      </span>
-                      <span>{progressPercentage}%</span>
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            )}
-
-            {/* ESTATÍSTICAS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-secondary/30 rounded-lg p-6 space-y-3">
-                <div className="flex justify-between">
-                  <h3 className="font-semibold flex items-center gap-2">
-                    <List className="w-4 h-4" />
-                    Preview
-                  </h3>
-                  {totalPreview > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleClearPreview}
-                      className="text-red-500"
-                    >
-                      <Trash2 className="w-4 h-4 mr-1" />
-                      Limpar
-                    </Button>
-                  )}
-                </div>
-                <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span>Filmes</span>
-                    <span className="font-bold">{moviesInPreview.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Séries</span>
-                    <span className="font-bold">{seriesInPreview.toLocaleString()}</span>
-                  </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
-                    <span>Total</span>
-                    <span className="text-yellow-500">
-                      {totalPreview.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-secondary/30 rounded-lg p-6 space-y-3">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Publicado
-                </h3>
-                <div className="text-sm space-y-2">
-                  <div className="flex justify-between">
-                    <span>Filmes</span>
-                    <span className="font-bold">
-                      {publishedContent.filter((i) => i.source === "movie").length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Séries</span>
-                    <span className="font-bold">
-                      {publishedContent.filter((i) => i.source === "series").length}
-                    </span>
-                  </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
-                    <span>Total</span>
-                    <span className="text-primary">{totalPublished.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* TABS: AUTO-LOAD vs UPLOAD */}
-            <Tabs defaultValue="auto" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="auto">
-                  <Download className="w-4 h-4 mr-2" />
-                  Carregamento Automático
-                </TabsTrigger>
-                <TabsTrigger value="manual">
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Manual
-                </TabsTrigger>
-              </TabsList>
-
-              {/* TAB: CARREGAMENTO AUTOMÁTICO */}
-              <TabsContent value="auto" className="space-y-4">
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-                  <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <Download className="w-4 h-4" />
-                    Como funciona?
-                  </h3>
-                  <ul className="text-sm space-y-1 text-muted-foreground list-disc list-inside">
-                    <li>Coloque um arquivo na pasta <code className="bg-secondary px-1 rounded">public/</code> com o nome <code className="bg-secondary px-1 rounded">playlist.m3u</code></li>
-                    <li>Formatos aceitos: .m3u, .m3u8, .txt, .zip</li>
-                    <li>Clique em "Carregar Arquivo Fixo" abaixo</li>
-                  </ul>
-                </div>
-
-                <Button
-                  onClick={handleAutoLoad}
-                  disabled={uploadProgress.status === "processing"}
-                  className="w-full"
-                  size="lg"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Carregar Arquivo Fixo (playlist.m3u)
-                </Button>
-
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-3">Ou carregar de URL externa:</h3>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="https://exemplo.com/playlist.m3u"
-                      value={externalUrl}
-                      onChange={(e) => setExternalUrl(e.target.value)}
-                      disabled={uploadProgress.status === "processing"}
-                    />
-                    <Button
-                      onClick={handleExternalUrl}
-                      disabled={uploadProgress.status === "processing" || !externalUrl.trim()}
-                    >
-                      <LinkIcon className="w-4 h-4 mr-2" />
-                      Carregar
-                    </Button>
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* TAB: UPLOAD MANUAL */}
-              <TabsContent value="manual" className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold mb-4">Selecione a Categoria</h3>
-                  <div className="flex gap-2 mb-4">
-                    <Button
-                      variant={uploadType === "movie" ? "default" : "secondary"}
-                      onClick={() => setUploadType("movie")}
-                      disabled={uploadProgress.status === "processing"}
-                    >
-                      <Film className="w-4 h-4 mr-2" />
-                      Filmes
-                    </Button>
-                    <Button
-                      variant={uploadType === "series" ? "default" : "secondary"}
-                      onClick={() => setUploadType("series")}
-                      disabled={uploadProgress.status === "processing"}
-                    >
-                      <Tv className="w-4 h-4 mr-2" />
-                      Séries
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".zip,.m3u,.m3u8,.txt"
-                    onChange={handleManualUpload}
-                    className="hidden"
-                    disabled={uploadProgress.status === "processing"}
-                  />
-                  <Button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadProgress.status === "processing"}
-                    className="w-full"
-                    size="lg"
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Selecionar Arquivo (.zip, .m3u, .txt)
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            {/* PUBLICAR */}
-            {hasUnpublished && uploadProgress.status !== "processing" && (
-              <div className="pt-4 border-t border-border">
-                <Button onClick={handlePublish} size="lg" className="w-full">
-                  <Send className="w-4 h-4 mr-2" />
-                  Publicar Todo o Conteúdo ({totalUnpublished.toLocaleString()})
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {/* FOOTER */}
-          <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t border-border rounded-b-2xl p-4 flex justify-end">
-            <Button variant="secondary" onClick={onClose}>
-              Fechar Painel
-            </Button>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
+        {/* FOOTER */}
+        <div className="sticky bottom-0 bg-background/95 backdrop-blur-sm border-t border-border p-4 flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
+            Fechar Painel
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 };
 

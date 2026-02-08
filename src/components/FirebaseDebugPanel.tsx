@@ -1,28 +1,30 @@
-// 🔍 DEBUG PANEL - Verificar status do Firebase
+// 🔍 DEBUG PANEL - Verificar status do sistema
 // Cole este componente no Dashboard para ver o que está acontecendo
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { useContent } from "@/contexts/ContentContext";
-import { FirebaseBackend } from "@/services/firebase-backend";
 import { RefreshCw, Database, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export const FirebaseDebugPanel = () => {
-  const { publishedContent, publishedMovies, publishedSeries } = useContent();
-  const [firebaseData, setFirebaseData] = useState<any>(null);
+  const { items, currentGrupo, stats } = useContent();
   const [loading, setLoading] = useState(false);
 
-  const checkFirebase = async () => {
+  const movies = items.filter(item => item.source === 'movie');
+  const series = items.filter(item => item.source === 'series');
+
+  const checkStatus = () => {
     setLoading(true);
-    try {
-      const data = await FirebaseBackend.loadPublishedContent();
-      setFirebaseData(data);
-      console.log("🔍 [DEBUG] Dados do Firebase:", data);
-    } catch (error) {
-      console.error("🔍 [DEBUG] Erro:", error);
-    } finally {
+    setTimeout(() => {
       setLoading(false);
-    }
+      console.log('🔍 [DEBUG] Status atual:', {
+        total: items.length,
+        movies: movies.length,
+        series: series.length,
+        currentGrupo,
+        stats
+      });
+    }, 500);
   };
 
   const forceReload = () => {
@@ -30,52 +32,44 @@ export const FirebaseDebugPanel = () => {
   };
 
   useEffect(() => {
-    checkFirebase();
+    checkStatus();
   }, []);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 bg-background border-2 border-primary rounded-lg p-4 shadow-2xl max-w-md">
       <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
         <Database className="w-5 h-5" />
-        Firebase Debug
+        Debug Panel
       </h3>
 
       <div className="space-y-2 text-sm">
         <div className="bg-secondary p-2 rounded">
-          <div className="font-semibold mb-1">📊 Estado Atual (React):</div>
+          <div className="font-semibold mb-1">📊 Estado Atual:</div>
           <div className="pl-3 space-y-1">
-            <div>Total: {publishedContent.length}</div>
-            <div>🎬 Filmes: {publishedMovies.length}</div>
-            <div>📺 Séries: {publishedSeries.length}</div>
+            <div>Total: {items.length}</div>
+            <div>🎬 Filmes: {movies.length}</div>
+            <div>📺 Episódios: {series.length}</div>
+            <div>📁 Grupo: {currentGrupo || 'Nenhum'}</div>
           </div>
         </div>
 
         <div className="bg-secondary p-2 rounded">
-          <div className="font-semibold mb-1">🔥 Firebase (Último Check):</div>
-          {firebaseData ? (
-            <div className="pl-3 space-y-1">
-              <div className="flex items-center gap-2">
-                {firebaseData.length > 0 ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-yellow-500" />
-                )}
-                <span>Total: {firebaseData.length}</span>
-              </div>
-              <div>🎬 Filmes: {firebaseData.filter((i: any) => i.source === 'movie').length}</div>
-              <div>📺 Episódios: {firebaseData.filter((i: any) => i.source === 'series').length}</div>
+          <div className="font-semibold mb-1">💾 Cache:</div>
+          <div className="pl-3 space-y-1">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-500" />
+              <span>Partes: {stats.partesCarregadas}</span>
             </div>
-          ) : (
-            <div className="pl-3 text-muted-foreground">Carregando...</div>
-          )}
+            <div>Memória: {stats.memoriaEmCache}</div>
+          </div>
         </div>
 
-        {publishedContent.length !== firebaseData?.length && (
+        {items.length === 0 && (
           <div className="bg-yellow-500/20 text-yellow-500 p-2 rounded flex items-start gap-2">
             <AlertCircle className="w-4 h-4 mt-0.5" />
             <div className="text-xs">
-              <div className="font-semibold">Diferença detectada!</div>
-              <div>React: {publishedContent.length} vs Firebase: {firebaseData?.length || 0}</div>
+              <div className="font-semibold">Nenhum item carregado!</div>
+              <div>Selecione um grupo para carregar conteúdo</div>
             </div>
           </div>
         )}
@@ -85,7 +79,7 @@ export const FirebaseDebugPanel = () => {
         <Button 
           size="sm" 
           variant="secondary"
-          onClick={checkFirebase}
+          onClick={checkStatus}
           disabled={loading}
         >
           {loading ? (

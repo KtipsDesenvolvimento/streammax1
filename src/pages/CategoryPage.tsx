@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useContent } from "@/contexts/ContentContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,7 +12,7 @@ const CategoryPage = () => {
   const { category } = useParams();
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
-  const { publishedMovies } = useContent();
+  const { items, currentGrupo, selectGrupo } = useContent();
 
   const [playerMovie, setPlayerMovie] = useState<{
     url: string;
@@ -23,13 +23,21 @@ const CategoryPage = () => {
   const decodedCategory = decodeURIComponent(category || "");
 
   // Filtrar conteúdos da categoria
-  const filtered = publishedMovies.filter(
+  const filtered = items.filter(
     (item) => item.category === decodedCategory
   );
 
   const handlePlay = (movie: { url: string; title: string }) => {
     setPlayerMovie(movie);
   };
+
+  // Carregar grupo correto se ainda não estiver carregado
+  useEffect(() => {
+    if (!currentGrupo) {
+      // Determinar grupo baseado na categoria (você pode ajustar essa lógica)
+      selectGrupo('filmes');
+    }
+  }, [currentGrupo, selectGrupo]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -65,9 +73,9 @@ const CategoryPage = () => {
                   key={item.id}
                   title={item.title}
                   image={item.image}
-                  year={""}
-                  duration={""}
-                  rating={""}
+                  year=""
+                  duration=""
+                  rating=""
                   delay={index * 0.03}
                   onPlay={() => handlePlay({ url: item.url, title: item.title })}
                 />

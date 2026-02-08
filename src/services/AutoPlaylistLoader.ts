@@ -1,26 +1,26 @@
 // 🔄 AUTO PLAYLIST LOADER - Sistema de Carregamento Automático
 // Este serviço carrega automaticamente um arquivo M3U fixo do servidor
 
-import { M3UItem } from "@/contexts/ContentContext";
+export interface M3UItem {
+  id: string;
+  title: string;
+  image: string;
+  category: string;
+  url: string;
+  source: 'movie' | 'series';
+}
 
 export class AutoPlaylistLoader {
   // 📁 CONFIGURAÇÃO: Coloque aqui o caminho do seu arquivo fixo
   private static PLAYLIST_URLS = {
-    // Opção 1: Arquivo na pasta public
-    publicFile: '/playlist.zip',
-    
-    // Opção 2: URL externa (Dropbox, Google Drive, etc)
+    publicFile: '/playlist',
     externalUrl: '',
-    
-    // Opção 3: Arquivo de texto convertido
-    txtFile: '/playlist.txt',
   };
 
   /**
    * 🔍 Detectar qual formato de arquivo está disponível
    */
   private static async detectAvailableFile(): Promise<{ url: string; type: 'zip' | 'm3u' | 'txt' | null }> {
-    // Tentar encontrar arquivo na pasta public
     const publicPath = '/playlist';
     
     // Tentar .m3u
@@ -73,7 +73,6 @@ export class AutoPlaylistLoader {
     try {
       console.log('🔄 [AUTO-LOADER] Iniciando carregamento automático...');
 
-      // Detectar arquivo disponível
       const detected = await this.detectAvailableFile();
       
       if (!detected.type) {
@@ -83,13 +82,11 @@ export class AutoPlaylistLoader {
 
       console.log('✅ [AUTO-LOADER] Arquivo encontrado:', detected.url);
 
-      // Baixar arquivo
       const response = await fetch(detected.url);
       if (!response.ok) {
         throw new Error(`Erro ao baixar: ${response.statusText}`);
       }
 
-      // Processar conforme tipo
       if (detected.type === 'zip') {
         const blob = await response.blob();
         return await this.processZipFile(blob, detected.url);
@@ -108,12 +105,10 @@ export class AutoPlaylistLoader {
    * 📦 Processar arquivo ZIP
    */
   private static async processZipFile(blob: Blob, source: string): Promise<{ content: M3UItem[]; source: string }> {
-    // Importar JSZip dinamicamente
     const JSZip = (await import('jszip')).default;
     
     const zip = await JSZip.loadAsync(blob);
     
-    // Procurar arquivo M3U dentro do ZIP
     const m3uFile = Object.values(zip.files).find(
       (f) => !f.dir && f.name.match(/\.m3u8?$/i)
     );
@@ -130,7 +125,7 @@ export class AutoPlaylistLoader {
   }
 
   /**
-   * 📄 Processar arquivo de texto (M3U ou TXT)
+   * 📄 Processar arquivo de texto
    */
   private static async processTextFile(text: string, source: string): Promise<{ content: M3UItem[]; source: string }> {
     const content = this.parseM3U(text);
@@ -139,7 +134,7 @@ export class AutoPlaylistLoader {
   }
 
   /**
-   * 📝 Parser M3U simplificado (usa mesma lógica do worker)
+   * 📝 Parser M3U
    */
   private static parseM3U(text: string): M3UItem[] {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -155,7 +150,6 @@ export class AutoPlaylistLoader {
         const image = line.match(/tvg-logo="([^"]*)"/)?.[1] || '';
         const category = line.match(/group-title="([^"]*)"/)?.[1] || 'Sem Categoria';
         
-        // Detectar se é série
         const isSeries = this.detectSeries(title);
         
         current = {
@@ -167,12 +161,10 @@ export class AutoPlaylistLoader {
         continue;
       }
       
-      // Se não for comentário e tiver URL atual
       if (!line.startsWith('#') && current.title) {
         current.url = line;
         current.id = `${current.title}::${current.url}`;
         
-        // Filtrar conteúdo adulto
         if (!this.isAdultContent(current.title, current.category)) {
           items.push(current as M3UItem);
         }
@@ -207,7 +199,7 @@ export class AutoPlaylistLoader {
   }
 
   /**
-   * 💾 Baixar arquivo de URL externa (Dropbox, Google Drive, etc)
+   * 💾 Baixar de URL externa
    */
   static async loadFromExternalUrl(url: string): Promise<{ content: M3UItem[]; source: string } | null> {
     try {
@@ -218,7 +210,6 @@ export class AutoPlaylistLoader {
         throw new Error(`Erro ao baixar: ${response.statusText}`);
       }
 
-      // Detectar tipo pelo Content-Type ou extensão
       const contentType = response.headers.get('Content-Type');
       const isZip = url.endsWith('.zip') || contentType?.includes('zip');
 
@@ -237,7 +228,7 @@ export class AutoPlaylistLoader {
   }
 
   /**
-   * 🔄 Verificar se arquivo fixo foi atualizado
+   * 🔄 Verificar atualizações
    */
   static async checkForUpdates(lastModified?: string): Promise<boolean> {
     try {

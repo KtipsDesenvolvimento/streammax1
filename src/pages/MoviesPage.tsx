@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useContent } from "@/contexts/ContentContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +11,7 @@ import AdminPanel from "@/components/AdminPanel";
 const MoviesPage = () => {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
-  const { publishedMovies } = useContent();
+  const { items, currentGrupo, selectGrupo } = useContent();
   
   const [playerMovie, setPlayerMovie] = useState<{
     url: string;
@@ -19,9 +19,19 @@ const MoviesPage = () => {
   } | null>(null);
   const [showAdmin, setShowAdmin] = useState(false);
 
+  // Filtrar apenas filmes
+  const movies = items.filter(item => item.source === 'movie');
+
   const handlePlay = (movie: { url: string; title: string }) => {
     setPlayerMovie(movie);
   };
+
+  // Garantir que o grupo de filmes está carregado
+  useEffect(() => {
+    if (!currentGrupo || currentGrupo !== 'filmes') {
+      selectGrupo('filmes');
+    }
+  }, [currentGrupo, selectGrupo]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -39,27 +49,27 @@ const MoviesPage = () => {
             </button>
             <h1 className="text-3xl font-bold mb-2">Filmes</h1>
             <p className="text-muted-foreground">
-              {publishedMovies.length} {publishedMovies.length === 1 ? 'filme disponível' : 'filmes disponíveis'}
+              {movies.length} {movies.length === 1 ? 'filme disponível' : 'filmes disponíveis'}
             </p>
           </div>
 
           {/* Grid de filmes */}
-          {publishedMovies.length === 0 ? (
+          {movies.length === 0 ? (
             <div className="py-20 text-center">
               <p className="text-muted-foreground text-lg">
-                Nenhum filme disponível no momento
+                Carregando filmes...
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {publishedMovies.map((movie, index) => (
+              {movies.map((movie, index) => (
                 <MovieCard
                   key={movie.id}
                   title={movie.title}
                   image={movie.image}
-                  year={""}
-                  duration={""}
-                  rating={""}
+                  year=""
+                  duration=""
+                  rating=""
                   delay={index * 0.03}
                   onPlay={() => handlePlay({ url: movie.url, title: movie.title })}
                 />

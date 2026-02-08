@@ -9,26 +9,19 @@ export interface ParsedEpisode {
 }
 
 /**
- * Padrões comuns de nomenclatura de episódios:
- * - Breaking Bad S01E01
- * - The Office 1x05
- * - Friends - Temporada 2 Episódio 3
- * - Game of Thrones S05E09 - The Dance of Dragons
- * - Better Call Saul S03E10 Lantern
- * - The Mandalorian 2x08
+ * Padrões comuns de nomenclatura de episódios
  */
-
 const PATTERNS = [
-  // S01E01 ou s01e01 (com múltiplos espaços como no seu M3U)
+  // S01E01 ou s01e01
   /^(.+?)\s+[Ss](\d{1,2})[Ee](\d{1,2})(?:\s*-?\s*(.+))?$/,
   
   // 1x01 ou 1X01
   /^(.+?)\s*(\d{1,2})[xX](\d{1,2})(?:\s*-?\s*(.+))?$/,
   
-  // Temporada 1 Episódio 01 ou Temp 1 Ep 01
+  // Temporada 1 Episódio 01
   /^(.+?)\s*(?:temporada|temp\.?|season)\s*(\d{1,2})\s*(?:episódio|episodio|ep\.?|episode)\s*(\d{1,2})(?:\s*-?\s*(.+))?$/i,
   
-  // [S01E01] no meio ou início
+  // [S01E01]
   /^(.+?)\s*\[?[Ss](\d{1,2})[Ee](\d{1,2})\]?(?:\s*-?\s*(.+))?$/,
 ];
 
@@ -55,27 +48,26 @@ export function parseEpisodeTitle(title: string): ParsedEpisode | null {
 }
 
 /**
- * Normaliza o nome da série para busca na API
- * Remove anos, qualidade, etc.
+ * Normaliza o nome da série
  */
 export function normalizeSeriesName(name: string): string {
   return name
-    .replace(/\s*\(?\d{4}\)?/g, "") // Remove anos (2020)
-    .replace(/\s*\[?(?:4k|hd|fhd|uhd|1080p|720p)\]?/gi, "") // Remove qualidade
-    .replace(/\s*\[.*?\]/g, "") // Remove [tags]
-    .replace(/\s+/g, " ") // Normaliza espaços
+    .replace(/\s*\(?\d{4}\)?/g, "")
+    .replace(/\s*\[?(?:4k|hd|fhd|uhd|1080p|720p)\]?/gi, "")
+    .replace(/\s*\[.*?\]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 /**
- * Verifica se um título é de série (tem padrão de episódio)
+ * Verifica se um título é de série
  */
 export function isSeries(title: string): boolean {
   return parseEpisodeTitle(title) !== null;
 }
 
 /**
- * Agrupa episódios por série
+ * Interface para série agrupada
  */
 export interface GroupedSeries {
   seriesName: string;
@@ -85,6 +77,9 @@ export interface GroupedSeries {
   totalEpisodes: number;
 }
 
+/**
+ * Agrupa episódios por série
+ */
 export function groupEpisodesBySeries(
   items: Array<{ id: string; title: string; url: string; image?: string }>
 ): GroupedSeries[] {
@@ -120,7 +115,7 @@ export function groupEpisodesBySeries(
     series.totalEpisodes = series.episodes.length;
   }
 
-  // Ordenar episódios de cada série
+  // Ordenar episódios
   seriesMap.forEach((series) => {
     series.episodes.sort((a, b) => {
       if (a.season !== b.season) return a.season - b.season;
@@ -132,13 +127,16 @@ export function groupEpisodesBySeries(
 }
 
 /**
- * Agrupa episódios por temporada dentro de uma série
+ * Interface para temporada agrupada
  */
 export interface SeasonGroup {
   season: number;
   episodes: Array<ParsedEpisode & { url: string; image?: string; id: string }>;
 }
 
+/**
+ * Agrupa episódios por temporada
+ */
 export function groupEpisodesByseason(
   episodes: Array<ParsedEpisode & { url: string; image?: string; id: string }>
 ): SeasonGroup[] {

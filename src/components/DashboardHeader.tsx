@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import MovieCard from "@/components/MovieCard";
-import SeriesCard from "@/components/SeriesCard";
 import {
   Sheet,
   SheetContent,
@@ -36,7 +35,7 @@ interface DashboardHeaderProps {
 
 const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
   const { user, logout, isAdmin } = useAuth();
-  const { publishedMovies, publishedSeries } = useContent();
+  const { items } = useContent();
   const navigate = useNavigate();
   
   const [searchOpen, setSearchOpen] = useState(false);
@@ -44,12 +43,15 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Filtrar conteúdo baseado na pesquisa
+  const movies = items.filter(item => item.source === 'movie');
+  const series = items.filter(item => item.source === 'series');
+
   const searchResults = {
-    movies: publishedMovies.filter(movie =>
+    movies: movies.filter(movie =>
       movie.title.toLowerCase().includes(searchQuery.toLowerCase())
     ).slice(0, 6),
-    series: publishedSeries.filter(series =>
-      series.seriesName.toLowerCase().includes(searchQuery.toLowerCase())
+    series: series.filter(ep =>
+      ep.title.toLowerCase().includes(searchQuery.toLowerCase())
     ).slice(0, 6),
   };
 
@@ -87,7 +89,7 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
               StreamMax
             </h1>
 
-            {/* NAVEGAÇÃO DESKTOP - Visível apenas em telas médias e grandes */}
+            {/* NAVEGAÇÃO DESKTOP */}
             <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
               <span 
                 onClick={() => handleNavigate("/")} 
@@ -108,7 +110,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                 Séries
               </span>
 
-              {/* Botão de Gerenciamento - Apenas para Admins */}
               {isAdmin && (
                 <button
                   onClick={onOpenAdmin}
@@ -130,7 +131,7 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
               <Bell className="w-5 h-5" />
             </Button>
 
-            {/* MENU MOBILE - Visível apenas em telas pequenas */}
+            {/* MENU MOBILE */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden">
@@ -216,7 +217,7 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
               </SheetContent>
             </Sheet>
 
-            {/* DROPDOWN DESKTOP - Visível apenas em telas médias e grandes */}
+            {/* DROPDOWN DESKTOP */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="hidden md:flex items-center gap-2">
@@ -289,7 +290,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
             onClick={handleSearchClose}
           >
             <div className="container mx-auto px-4 py-8" onClick={(e) => e.stopPropagation()}>
-              {/* Barra de pesquisa */}
               <div className="max-w-3xl mx-auto mb-8">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-muted-foreground" />
@@ -312,7 +312,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                 </div>
               </div>
 
-              {/* Resultados */}
               {searchQuery.length > 0 && (
                 <div className="max-w-7xl mx-auto">
                   {!hasResults ? (
@@ -323,7 +322,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                     </div>
                   ) : (
                     <div className="space-y-8">
-                      {/* Filmes */}
                       {searchResults.movies.length > 0 && (
                         <div>
                           <h2 className="text-xl font-bold mb-4">
@@ -335,9 +333,9 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                                 <MovieCard
                                   title={movie.title}
                                   image={movie.image}
-                                  year={""}
-                                  duration={""}
-                                  rating={""}
+                                  year=""
+                                  duration=""
+                                  rating=""
                                   delay={index * 0.05}
                                   onPlay={() => {
                                     handleSearchClose();
@@ -350,18 +348,25 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                         </div>
                       )}
 
-                      {/* Séries */}
                       {searchResults.series.length > 0 && (
                         <div>
                           <h2 className="text-xl font-bold mb-4">
-                            Séries ({searchResults.series.length})
+                            Episódios ({searchResults.series.length})
                           </h2>
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {searchResults.series.map((series, index) => (
-                              <div key={series.normalizedName} onClick={handleSearchClose}>
-                                <SeriesCard
-                                  series={series}
+                            {searchResults.series.map((ep, index) => (
+                              <div key={ep.id} onClick={handleSearchClose}>
+                                <MovieCard
+                                  title={ep.title}
+                                  image={ep.image}
+                                  year=""
+                                  duration=""
+                                  rating=""
                                   delay={index * 0.05}
+                                  onPlay={() => {
+                                    handleSearchClose();
+                                    window.open(ep.url, "_blank");
+                                  }}
                                 />
                               </div>
                             ))}
@@ -373,7 +378,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
                 </div>
               )}
 
-              {/* Sugestões quando não há busca */}
               {searchQuery.length === 0 && (
                 <div className="max-w-3xl mx-auto text-center py-12">
                   <h3 className="text-xl font-semibold mb-4">Explore nosso catálogo</h3>
@@ -400,7 +404,6 @@ const DashboardHeader = ({ onOpenAdmin }: DashboardHeaderProps) => {
               )}
             </div>
 
-            {/* Botão fechar no canto */}
             <button
               onClick={handleSearchClose}
               className="fixed top-4 right-4 w-12 h-12 bg-secondary hover:bg-secondary-foreground/10 rounded-full flex items-center justify-center transition-colors"
