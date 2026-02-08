@@ -7,13 +7,8 @@
       "titulo": "Filmes",
       "partes": [
         {
-          "arquivo": "filmes_part1.m3u",
+          "arquivo": "filmes.m3u",
           "offset": 0,
-          "count": 0
-        },
-        {
-          "arquivo": "filmes_part2.m3u",
-          "offset": 50000,
           "count": 0
         }
       ]
@@ -23,13 +18,18 @@
       "titulo": "Séries",
       "partes": [
         {
-          "arquivo": "series_part1.m3u",
+          "arquivo": "series1.m3u",
           "offset": 0,
           "count": 0
         },
         {
-          "arquivo": "series_part2.m3u",
+          "arquivo": "series2.m3u",
           "offset": 50000,
+          "count": 0
+        },
+        {
+          "arquivo": "series.m3u",
+          "offset": 100000,
           "count": 0
         }
       ]
