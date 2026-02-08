@@ -9,7 +9,8 @@ import {
   useEffect,
 } from "react";
 import { groupEpisodesBySeries, type GroupedSeries } from "@/utils/seriesParser";
-import { usePersistedState, UploadHistoryManager, dateUtils } from "@/hooks/usePersistence";
+import { UploadHistoryManager, dateUtils } from "@/hooks/usePersistence";
+import { FirebaseBackend } from "@/services/firebase-backend";
 
 export interface M3UItem {
   id: string;
@@ -72,48 +73,60 @@ interface ContentContextType {
   // Auto-save status
   isAutoSaving: boolean;
   lastSaved: string | null;
+  
+  // Loading state
+  isLoading: boolean;
 }
 
 const ContentContext = createContext<ContentContextType | null>(null);
 
-// Chaves de persistência
-const KEYS = {
-  PREVIEW: "streammax_preview_content",
-  PUBLISHED: "streammax_published_content",
-  SERIES_DATA: "streammax_enriched_series",
-  METADATA: "streammax_metadata",
-};
-
 export const ContentProvider = ({ children }: { children: ReactNode }) => {
-  // Estados com persistência automática
-  const [previewContent, setPreviewContent] = usePersistedState<M3UItem[]>(
-    KEYS.PREVIEW,
-    []
-  );
+  // Estados principais
+  const [previewContent, setPreviewContent] = useState<M3UItem[]>([]);
+  const [publishedContent, setPublishedContent] = useState<M3UItem[]>([]);
+  const [enrichedSeriesData, setEnrichedSeriesData] = useState<Record<string, any>>({});
+  const [metadata, setMetadata] = useState<ContentMetadata>({
+    lastUpdated: new Date().toISOString(),
+    totalMovies: 0,
+    totalSeries: 0,
+    totalEpisodes: 0,
+  });
 
-  const [publishedContent, setPublishedContent] = usePersistedState<M3UItem[]>(
-    KEYS.PUBLISHED,
-    []
-  );
-
-  const [enrichedSeriesData, setEnrichedSeriesData] = usePersistedState<Record<string, any>>(
-    KEYS.SERIES_DATA,
-    {}
-  );
-
-  const [metadata, setMetadata] = usePersistedState<ContentMetadata>(
-    KEYS.METADATA,
-    {
-      lastUpdated: new Date().toISOString(),
-      totalMovies: 0,
-      totalSeries: 0,
-      totalEpisodes: 0,
-    }
-  );
-
-  // Estado de auto-save
+  // Estado de controle
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // 🔥 CARREGAR DADOS DO FIREBASE NA INICIALIZAÇÃO
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      console.log("📥 Carregando dados do Firebase...");
+      
+      try {
+        const [content, seriesData, meta] = await Promise.all([
+          FirebaseBackend.loadPublishedContent(),
+          FirebaseBackend.loadEnrichedSeriesData(),
+          FirebaseBackend.loadMetadata()
+        ]);
+
+        setPublishedContent(content);
+        setEnrichedSeriesData(seriesData);
+        setMetadata(meta);
+        
+        console.log("✅ Dados carregados:", {
+          content: content.length,
+          series: Object.keys(seriesData).length
+        });
+      } catch (error) {
+        console.error("❌ Erro ao carregar dados:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   // Separar filmes do preview
   const previewMovies = useMemo(
@@ -167,25 +180,52 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [publishedContent, enrichedSeriesData]);
 
+  // 🔥 SALVAR AUTOMATICAMENTE NO FIREBASE QUANDO CONTEÚDO PUBLICADO MUDAR
+  useEffect(() => {
+    if (publishedContent.length > 0 && !isLoading) {
+      const saveData = async () => {
+        setIsAutoSaving(true);
+        await FirebaseBackend.savePublishedContent(publishedContent);
+        setLastSaved(dateUtils.format(new Date()));
+        setTimeout(() => setIsAutoSaving(false), 500);
+      };
+      
+      saveData();
+    }
+  }, [publishedContent, isLoading]);
+
+  // 🔥 SALVAR DADOS DE SÉRIES NO FIREBASE
+  useEffect(() => {
+    if (Object.keys(enrichedSeriesData).length > 0 && !isLoading) {
+      const saveData = async () => {
+        await FirebaseBackend.saveEnrichedSeriesData(enrichedSeriesData);
+      };
+      
+      saveData();
+    }
+  }, [enrichedSeriesData, isLoading]);
+
   // Atualizar metadata quando conteúdo mudar
   useEffect(() => {
-    const totalEpisodesPreview = previewSeries.reduce(
-      (sum, series) => sum + series.totalEpisodes,
-      0
-    );
-
     const totalEpisodesPublished = publishedSeries.reduce(
       (sum, series) => sum + series.totalEpisodes,
       0
     );
 
-    setMetadata({
+    const newMetadata = {
       lastUpdated: new Date().toISOString(),
       totalMovies: publishedMovies.length,
       totalSeries: publishedSeries.length,
       totalEpisodes: totalEpisodesPublished,
-    });
-  }, [publishedMovies, publishedSeries, setMetadata]);
+    };
+    
+    setMetadata(newMetadata);
+    
+    // Salvar metadata no Firebase
+    if (!isLoading) {
+      FirebaseBackend.saveMetadata(newMetadata);
+    }
+  }, [publishedMovies, publishedSeries, isLoading]);
 
   // Enriquecer série com dados do TMDb
   const enrichSeries = useCallback(
@@ -198,10 +238,9 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       }));
 
       setLastSaved(dateUtils.format(new Date()));
-      
       setTimeout(() => setIsAutoSaving(false), 500);
     },
-    [setEnrichedSeriesData]
+    []
   );
 
   // Publicar conteúdo
@@ -215,7 +254,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       return [...current, ...newItems];
     });
 
-    // Adicionar ao histórico
+    // Adicionar ao histórico (localStorage)
     UploadHistoryManager.addUpload({
       uploadedAt: new Date().toISOString(),
       totalItems: previewContent.length,
@@ -225,15 +264,15 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
 
     setLastSaved(dateUtils.format(new Date()));
     setTimeout(() => setIsAutoSaving(false), 500);
-  }, [previewContent, setPublishedContent]);
+  }, [previewContent]);
 
   // Limpar apenas preview
   const clearPreview = useCallback(() => {
     setPreviewContent([]);
-  }, [setPreviewContent]);
+  }, []);
 
   // Limpar todos os dados
-  const clearAllData = useCallback(() => {
+  const clearAllData = useCallback(async () => {
     setPreviewContent([]);
     setPublishedContent([]);
     setEnrichedSeriesData({});
@@ -243,7 +282,17 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
       totalSeries: 0,
       totalEpisodes: 0,
     });
-  }, [setPreviewContent, setPublishedContent, setEnrichedSeriesData, setMetadata]);
+    
+    // Limpar Firebase
+    await FirebaseBackend.savePublishedContent([]);
+    await FirebaseBackend.saveEnrichedSeriesData({});
+    await FirebaseBackend.saveMetadata({
+      lastUpdated: new Date().toISOString(),
+      totalMovies: 0,
+      totalSeries: 0,
+      totalEpisodes: 0,
+    });
+  }, []);
 
   // Obter histórico de uploads
   const getUploadHistory = useCallback(async () => {
@@ -255,16 +304,6 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
     const publishedIds = new Set(publishedContent.map(i => i.id));
     return previewContent.some(item => !publishedIds.has(item.id));
   }, [previewContent, publishedContent]);
-
-  // Log de inicialização (debug)
-  useEffect(() => {
-    console.log("📦 ContentContext inicializado com persistência");
-    console.log("📊 Dados carregados:", {
-      preview: previewContent.length,
-      published: publishedContent.length,
-      series: Object.keys(enrichedSeriesData).length,
-    });
-  }, []);
 
   return (
     <ContentContext.Provider
@@ -285,6 +324,7 @@ export const ContentProvider = ({ children }: { children: ReactNode }) => {
         getUploadHistory,
         isAutoSaving,
         lastSaved,
+        isLoading,
       }}
     >
       {children}
