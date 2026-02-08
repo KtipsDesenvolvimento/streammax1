@@ -7,7 +7,7 @@ export class AutoPlaylistLoader {
   // 📁 CONFIGURAÇÃO: Coloque aqui o caminho do seu arquivo fixo
   private static PLAYLIST_URLS = {
     // Opção 1: Arquivo na pasta public
-    publicFile: '/playlist.m3u',
+    publicFile: '/playlist.zip',
     
     // Opção 2: URL externa (Dropbox, Google Drive, etc)
     externalUrl: '',
