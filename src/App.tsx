@@ -7,6 +7,11 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { ContentProvider } from "./contexts/ContentContext";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import CategoryPage from "./pages/CategoryPage";
+import MoviesPage from "./pages/MoviesPage";
+import SeriesPage from "./pages/SeriesPage";
+import SeriesDetails from "./components/SeriesDetails";
+
 
 const queryClient = new QueryClient();
 
@@ -21,6 +26,10 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="*" element={<NotFound />} />
+              <Route path="/movies" element={<MoviesPage />} />
+              <Route path="/series" element={<SeriesPage />} />
+              <Route path="/category/:category" element={<CategoryPage />} />
+              <Route path="/series/:seriesName" element={<SeriesDetails />} />
             </Routes>
           </BrowserRouter>
         </TooltipProvider>
