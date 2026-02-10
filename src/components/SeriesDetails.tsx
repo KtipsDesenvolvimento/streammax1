@@ -34,9 +34,24 @@ const SeriesDetails = () => {
   } | null>(null);
   const [isLoadingTMDb, setIsLoadingTMDb] = useState(false);
 
-  // Encontrar a série
+  // 🔍 CORREÇÃO: Decodificar o nome da série e buscar corretamente
+  const decodedSeriesName = decodeURIComponent(seriesName || "");
+  
+  console.log("🔍 Buscando série:", decodedSeriesName);
+  console.log("📚 Séries disponíveis:", publishedSeries.map(s => s.normalizedName));
+
+  // Encontrar a série com comparação case-insensitive e normalizada
   const series = publishedSeries.find(
-    (s) => s.normalizedName === decodeURIComponent(seriesName || "")
+    (s) => {
+      const match = s.normalizedName.toLowerCase() === decodedSeriesName.toLowerCase() ||
+                    s.seriesName.toLowerCase() === decodedSeriesName.toLowerCase();
+      
+      if (match) {
+        console.log("✅ Série encontrada:", s.seriesName);
+      }
+      
+      return match;
+    }
   );
 
   // Buscar dados do TMDb se ainda não tiver
@@ -68,14 +83,25 @@ const SeriesDetails = () => {
     fetchTMDbData();
   }, [series, enrichSeries, isLoadingTMDb]);
 
+  // 🔴 CORREÇÃO: Mensagem de erro melhorada
   if (!series) {
+    console.error("❌ Série não encontrada:", decodedSeriesName);
+    
     return (
       <div className="min-h-screen bg-background">
         <DashboardHeader onOpenAdmin={() => setShowAdmin(true)} />
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="text-center">
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="text-center max-w-md">
             <h2 className="mb-4 text-2xl font-bold">Série não encontrada</h2>
-            <Button onClick={() => navigate("/")}>Voltar para o início</Button>
+            <p className="text-muted-foreground mb-4">
+              A série "{decodedSeriesName}" não foi encontrada.
+            </p>
+            <p className="text-sm text-muted-foreground mb-6">
+              Isso pode acontecer se a série não foi publicada ou o link está incorreto.
+            </p>
+            <Button onClick={() => navigate("/series")}>
+              Ver todas as séries
+            </Button>
           </div>
         </div>
       </div>
@@ -89,7 +115,15 @@ const SeriesDetails = () => {
 
   const backdropUrl = series.backdrop || series.episodes[0]?.image || "";
 
+  // 🎬 CORREÇÃO: Melhorar função de play
   const handlePlayEpisode = (episode: any) => {
+    console.log("▶️ Reproduzindo episódio:", episode);
+    
+    if (!episode.url) {
+      console.error("❌ URL do episódio não encontrada");
+      return;
+    }
+
     setPlayerMovie({
       url: episode.url,
       title: `${series.seriesName} - S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}${episode.episodeTitle ? ` - ${episode.episodeTitle}` : ""}`,
@@ -101,7 +135,7 @@ const SeriesDetails = () => {
       <DashboardHeader onOpenAdmin={() => setShowAdmin(true)} />
 
       {/* Hero Section */}
-      <div className="relative h-[80vh] w-full overflow-hidden">
+      <div className="relative h-[80vh] md:h-[85vh] w-full overflow-hidden">
         {/* Background */}
         <div
           className="absolute inset-0 bg-cover bg-center"
