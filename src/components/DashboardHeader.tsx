@@ -1,124 +1,65 @@
-import { LayoutDashboard, Film, Tv, Menu } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Shield, Film, Tv } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+
+export type DashboardTab = "movies" | "series";
 
 interface DashboardHeaderProps {
-  isAdmin?: boolean;
-  activeTab: "movies" | "series";
-  onChangeTab: (tab: "movies" | "series") => void;
-  onOpenAdmin?: (e: React.MouseEvent) => void;
+  onOpenAdmin?: () => void;
+
+  /** Usado apenas quando houver abas (mobile / páginas específicas) */
+  activeTab?: DashboardTab;
+  onChangeTab?: (tab: DashboardTab) => void;
 }
 
-export default function DashboardHeader({
-  isAdmin = false,
+const DashboardHeader = ({
+  onOpenAdmin,
   activeTab,
   onChangeTab,
-  onOpenAdmin,
-}: DashboardHeaderProps) {
+}: DashboardHeaderProps) => {
+  const { isAdmin } = useAuth();
+
+  const showTabs = activeTab && onChangeTab;
+
   return (
-    <header className="w-full border-b border-border bg-background">
-      <div className="flex items-center justify-between px-4 py-3 max-w-7xl mx-auto">
-        {/* LOGO / TÍTULO */}
-        <h1 className="text-lg font-semibold tracking-tight">
-          Dashboard
-        </h1>
+    <header className="fixed top-0 inset-x-0 z-50 bg-background/80 backdrop-blur border-b">
+      <div className="container mx-auto h-16 flex items-center justify-between px-4">
+        {/* LOGO */}
+        <h1 className="text-lg font-bold">KTips</h1>
 
-        {/* ===== DESKTOP ===== */}
-        <div className="hidden md:flex items-center gap-6">
-          {/* Abas */}
-          <button
-            onClick={() => onChangeTab("movies")}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-              activeTab === "movies"
-                ? "text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Film className="w-4 h-4" />
-            Filmes
-          </button>
-
-          <button
-            onClick={() => onChangeTab("series")}
-            className={`flex items-center gap-2 text-sm font-medium transition-colors ${
-              activeTab === "series"
-                ? "text-primary"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Tv className="w-4 h-4" />
-            Séries
-          </button>
-
-          {/* Admin */}
-          {isAdmin && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenAdmin?.(e);
-              }}
-              className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+        {/* ABAS (somente quando necessário) */}
+        {showTabs && (
+          <div className="flex gap-2 md:hidden">
+            <Button
+              variant={activeTab === "movies" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onChangeTab("movies")}
             >
-              <LayoutDashboard className="w-4 h-4" />
-              Gerenciamento
-            </button>
-          )}
-        </div>
+              <Film className="w-4 h-4 mr-1" />
+              Filmes
+            </Button>
 
-        {/* ===== MOBILE ===== */}
-        <div className="flex md:hidden items-center gap-2">
-          {/* Abas Mobile */}
-          <button
-            onClick={() => onChangeTab("movies")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeTab === "movies"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            Filmes
-          </button>
+            <Button
+              variant={activeTab === "series" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onChangeTab("series")}
+            >
+              <Tv className="w-4 h-4 mr-1" />
+              Séries
+            </Button>
+          </div>
+        )}
 
-          <button
-            onClick={() => onChangeTab("series")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              activeTab === "series"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            Séries
-          </button>
-
-          {/* Menu Mobile */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="p-2 rounded-md hover:bg-muted transition">
-                <Menu className="w-5 h-5" />
-              </button>
-            </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end" className="w-48">
-              {isAdmin && (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenAdmin?.(e);
-                  }}
-                  className="gap-2 cursor-pointer"
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  Painel Administrativo
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {/* ADMIN */}
+        {isAdmin && onOpenAdmin && (
+          <Button size="sm" variant="outline" onClick={onOpenAdmin}>
+            <Shield className="w-4 h-4 mr-2" />
+            Admin
+          </Button>
+        )}
       </div>
     </header>
   );
-}
+};
+
+export default DashboardHeader;
