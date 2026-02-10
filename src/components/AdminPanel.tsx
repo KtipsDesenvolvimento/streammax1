@@ -229,7 +229,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
     publishContent();
     toast({
       title: "Publicado!",
-      description: `${hasUnpublished} itens foram publicados com sucesso`,
+      description: `${totalUnpublished} itens foram publicados com sucesso`,
     });
   };
 
@@ -261,7 +261,8 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-2 md:p-4"
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto p-2 md:p-4"
+        style={{ zIndex: 9999 }}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -278,7 +279,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                 <Shield className="w-5 h-5 md:w-6 md:h-6 text-yellow-500" />
               </div>
               <div>
-                <h2 className="text-xl md:text-2xl font-bold">Painel Administrativo</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-foreground">Painel Administrativo</h2>
                 <p className="text-xs md:text-sm text-muted-foreground">
                   {user?.email}
                 </p>
@@ -314,7 +315,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                   {uploadProgress.status === "error" && (
                     <AlertCircle className="w-5 h-5 text-red-500" />
                   )}
-                  <span className="font-semibold text-sm md:text-base">
+                  <span className="font-semibold text-sm md:text-base text-foreground">
                     {uploadProgress.message}
                   </span>
                 </div>
@@ -337,7 +338,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-secondary/30 rounded-lg p-4 md:p-6 space-y-3">
                 <div className="flex justify-between items-center">
-                  <h3 className="font-semibold flex items-center gap-2 text-sm md:text-base">
+                  <h3 className="font-semibold flex items-center gap-2 text-sm md:text-base text-foreground">
                     <List className="w-4 h-4" />
                     Preview
                   </h3>
@@ -346,7 +347,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                       variant="ghost"
                       size="sm"
                       onClick={handleClearPreview}
-                      className="text-red-500 text-xs md:text-sm"
+                      className="text-red-500 text-xs md:text-sm hover:bg-red-500/10"
                     >
                       <Trash2 className="w-3 h-3 md:w-4 md:h-4 mr-1" />
                       Limpar
@@ -354,20 +355,20 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
                   )}
                 </div>
                 <div className="text-xs md:text-sm space-y-2">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-foreground">
                     <span>Filmes</span>
                     <span className="font-bold">
                       {moviesInPreview.toLocaleString()}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-foreground">
                     <span>Séries</span>
                     <span className="font-bold">
                       {seriesInPreview.toLocaleString()}
                     </span>
                   </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
-                    <span>Total</span>
+                  <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                    <span className="text-foreground">Total</span>
                     <span className="text-yellow-500">
                       {totalPreview.toLocaleString()}
                     </span>
@@ -376,25 +377,25 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
               </div>
 
               <div className="bg-secondary/30 rounded-lg p-4 md:p-6 space-y-3">
-                <h3 className="font-semibold flex items-center gap-2 text-sm md:text-base">
+                <h3 className="font-semibold flex items-center gap-2 text-sm md:text-base text-foreground">
                   <CheckCircle2 className="w-4 h-4" />
                   Publicado
                 </h3>
                 <div className="text-xs md:text-sm space-y-2">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-foreground">
                     <span>Filmes</span>
                     <span className="font-bold">
                       {moviesPublished.toLocaleString()}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between text-foreground">
                     <span>Séries</span>
                     <span className="font-bold">
                       {seriesPublished.toLocaleString()}
                     </span>
                   </div>
-                  <div className="border-t pt-2 flex justify-between font-semibold">
-                    <span>Total</span>
+                  <div className="border-t border-border pt-2 flex justify-between font-semibold">
+                    <span className="text-foreground">Total</span>
                     <span className="text-primary">
                       {totalPublished.toLocaleString()}
                     </span>
@@ -405,7 +406,7 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
 
             {/* SELEÇÃO */}
             <div>
-              <h3 className="text-base md:text-lg font-semibold mb-4">
+              <h3 className="text-base md:text-lg font-semibold mb-4 text-foreground">
                 Selecione a Categoria de Upload
               </h3>
               <div className="flex gap-2 mb-4">
@@ -435,9 +436,9 @@ const AdminPanel = ({ onClose }: AdminPanelProps) => {
               <div className="mb-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <div className="flex items-start gap-2">
                   <FileArchive className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                  <div className="text-xs md:text-sm text-blue-500">
+                  <div className="text-xs md:text-sm text-blue-400">
                     <p className="font-semibold mb-1">Suporte a ZIP e M3U</p>
-                    <p>Você pode fazer upload de arquivos .zip, .m3u ou .m3u8. Os novos itens serão adicionados sem remover o conteúdo existente.</p>
+                    <p className="text-blue-300">Você pode fazer upload de arquivos .zip, .m3u ou .m3u8. Os novos itens serão adicionados sem remover o conteúdo existente.</p>
                   </div>
                 </div>
               </div>
